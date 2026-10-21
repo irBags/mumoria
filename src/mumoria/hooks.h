@@ -17,17 +17,26 @@ void muBell();
 
 // Other players on the loaded level.
 bool muOtherPlayerAt(Coord_t const &coord);
+// How the "@" on coord is drawn (colour.cpp): 0 when it is not a player.
+uint32_t muTileAttr(Coord_t const &coord);
 const char *muOtherPlayerNameAt(Coord_t const &coord);
 // Is another player on this level closer to coord than `distance`?
 bool muNearerPlayer(Coord_t const &coord, int distance);
 
 // Experience for a kill (shared out in a party).
 void muKillExperience(Creature_t const &creature);
-// A monster is about to die (bosses drop their loot here).
-void muMonsterDies(int monster_id);
+// A monster is about to die: bosses drop loot, a party or guild rolls for the
+// drops (items placed since treasure_before).
+void muMonsterDies(int monster_id, int treasure_before);
+// Gold picked up: shared in a party or guild. Returns the line to print.
+std::string muGoldFound(int32_t gold, const char *description);
 
-// Keys Umoria leaves unused ('): true if handled.
+// Keys Umoria leaves unused (' and "): true if handled. It sets
+// game.player_free_turn: chat is free, an attack takes a turn.
 bool muCommand(char key);
+// One round of Umoria's melee against another player (player.cpp): says
+// each hit and miss, returns the damage done.
+int muPlayerMeleeDamage(int target_ac, const char *target_name);
 // The end of each game turn (others on the level are told to redraw).
 void muTurnDone();
 // Town buildings 7-9 (store door sub-categories 107-109).
@@ -40,6 +49,9 @@ void muPlaceTownBuildings();
 bool muWizardAllowed();
 // A free floor square, not under anyone.
 void muFindSpot(Coord_t &coord);
+// Umoria's 1 in MON_CHANCE_OF_NEW, divided by the number of players and
+// parties exploring the level (never below 1 in 40). The town keeps its own.
+int muNewMonsterChance();
 
 // While one of these is alive, a prompt does not hold the player's level:
 // it is a menu or a question before anything has changed.

@@ -9,6 +9,7 @@
 #pragma once
 
 #include <pthread.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -20,11 +21,22 @@ extern "C" {
 #define MU_ROWS (MU_GAME_ROWS + MU_CHAT_ROWS)
 #define MU_OUT_LIMIT (512 * 1024) // a client this far behind is dropped
 
+// A cell's look: an xterm 256-colour foreground and background, and bold.
+// 0 is the terminal's own look.
+#define MU_ATTR_BOLD (1u << 24)
+#define MU_ATTR_FG(n) ((1u << 25) | (uint32_t) (n))
+#define MU_ATTR_BG(n) ((1u << 26) | ((uint32_t) (n) << 8))
+
 typedef struct MuScreen {
     pthread_mutex_t lock;
     char cell[MU_ROWS][MU_COLS];
     char sent[MU_ROWS][MU_COLS];
     char saved[MU_GAME_ROWS][MU_COLS]; // terminalSaveScreen()
+    uint32_t attr[MU_ROWS][MU_COLS];
+    uint32_t sent_attr[MU_ROWS][MU_COLS];
+    uint32_t saved_attr[MU_GAME_ROWS][MU_COLS];
+    uint32_t cur_attr;  // what mu_vt_addch writes with
+    uint32_t term_attr; // what the client's terminal is set to
     int cy, cx;
     int full_redraw;
 
@@ -45,6 +57,7 @@ void mu_vt_free(MuScreen *s);
 extern __thread MuScreen *mu_vt_current;
 
 void mu_vt_move(MuScreen *s, int y, int x);
+void mu_vt_set_attr(MuScreen *s, uint32_t attr);
 void mu_vt_addch(MuScreen *s, char ch);
 void mu_vt_addstr(MuScreen *s, const char *str);
 void mu_vt_clrtoeol(MuScreen *s);

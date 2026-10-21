@@ -148,6 +148,7 @@ int main(int argc, char *argv[]) {
     static std::string secret = setting("aol_token_secret", "");
     mu_aol_secret = secret.c_str();
     mu_guild_cost = atoi(setting("guild_cost", "1000").c_str());
+    mu_gold_level_bonus = (int) (atof(setting("party_gold_per_level", "0.5").c_str()) * 100 + 0.5);
 
     if (mu_db_open(db.c_str()) != 0) {
         return 1;

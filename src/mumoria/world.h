@@ -32,8 +32,11 @@ struct MuPlayerCtx {
     int run_prevdir = 0, run_direction = 0;
     int eof = 0;
     bool opt[11]{};
-    // field marks and lamp light on the player's level, one bit a square
-    std::vector<uint8_t> marks, lights;
+    // What the player remembers of their level, one bit a square: field
+    // marks, and (below the town, where Umoria uses it only for what the
+    // player has lit) permanent light. Lamp light is not kept: load_player
+    // relights everyone's lamp where they stand.
+    std::vector<uint8_t> marks, lit;
     int marks_depth = -1;
 };
 
@@ -76,7 +79,11 @@ void mu_world_lock(MuSession *s);
 void mu_world_unlock(MuSession *s, bool hold_level);
 
 // Runs fn with `other` loaded (lock held by the caller), then swaps back.
+// The engine draws on the thread's screen: fn draws on other's.
 template <typename F> void mu_with_player(MuSession *self, MuSession *other, F fn);
+MuScreen *mu_screen_of(MuSession *s);
+// Another player standing on coord, drawn and in the way (not in a building).
+MuSession *mu_player_at(Coord_t const &coord);
 void mu_swap_in(MuSession *s);
 
 // Sessions in the game, under the world lock.
@@ -110,7 +117,10 @@ template <typename F> void mu_with_player(MuSession *self, MuSession *other, F f
         fn();
         return;
     }
+    MuScreen *screen = mu_vt_current;
     mu_swap_in(other);
+    mu_vt_current = mu_screen_of(other);
     fn();
+    mu_vt_current = screen;
     mu_swap_in(self);
 }

@@ -6,6 +6,8 @@
 
 #include "social.h"
 
+#include "boss.h"
+#include "colour.h"
 #include "irc.h"
 #include "mu_config.h"
 #include "screens.h"
@@ -134,6 +136,19 @@ static void tell(MuSession *s, const std::string &who, const std::string &text) 
     say(t, "[From " + s->char_name + "] " + text);
     say(s, "[To " + t->char_name + "] " + text);
     t->reply_to = s->char_name;
+}
+
+// Shields follow membership: after a party or guild change every map is
+// redrawn (they are rare, and a redraw sends only the changed squares).
+static void restyle_everyone() {
+    pthread_mutex_lock(&mu_sessions_lock);
+    for (MuSession *p : mu_sessions) {
+        if (p->in_game) {
+            p->view_stale = true;
+            mu_conn_poke(p->conn);
+        }
+    }
+    pthread_mutex_unlock(&mu_sessions_lock);
 }
 
 // --- parties ----------------------------------------------------------------
@@ -274,6 +289,305 @@ void muKillExperience(Creature_t const &creature) {
     }
 }
 
+// --- sharing: a party, or guild members, on the same level ----------------------
+
+int mu_gold_level_bonus = 50;
+
+static std::vector<MuSession *> sharers(MuSession *s) {
+    std::vector<MuSession *> out{s};
+    if (s->level == nullptr) {
+        return out;
+    }
+    for (MuSession *p : s->level->players) {
+        bool party = s->party != nullptr && p->party == s->party;
+        bool guild = s->guild_id != 0 && p->guild_id == s->guild_id;
+        if (p != s && (party || guild)) {
+            out.push_back(p);
+        }
+    }
+    return out;
+}
+
+// All gold is shared: the find plus mu_gold_level_bonus for each level below
+// the first, split evenly. Pieces below one are kept per player in hundredths.
+std::string muGoldFound(int32_t gold, const char *description) {
+    MuSession *s = mu_self;
+    std::vector<MuSession *> group = sharers(s);
+    if (group.size() == 1) {
+        py.misc.au += gold;
+        return "You have found " + std::to_string(gold) + " gold pieces worth of " + description;
+    }
+    int depth = s->level != nullptr ? s->level->depth : 0;
+    int64_t pool = (int64_t) gold * 100 + (int64_t) (depth > 1 ? depth - 1 : 0) * mu_gold_level_bonus;
+    int64_t each = pool / (int64_t) group.size();
+    int32_t mine = 0;
+    for (MuSession *p : group) {
+        p->gold_fraction += each;
+        auto whole = (int32_t) (p->gold_fraction / 100);
+        p->gold_fraction %= 100;
+        if (p == s) {
+            mine = whole;
+            py.misc.au += whole;
+        } else {
+            p->ctx.py.misc.au += whole; // not loaded: the copy is theirs
+            p->gold_dirty = true;
+            say(p, "[Loot] " + s->char_name + " found " + std::to_string(gold) + " gold; your share is " + std::to_string(whole) + ".");
+            mu_conn_poke(p->conn);
+        }
+    }
+    return "You found " + std::to_string(gold) + " gold (" + description + "); your share is " + std::to_string(mine) + ".";
+}
+
+// Items a monster dropped (placed since treasure_before, near where it died)
+// are rolled for: d100 each, ties roll again, the highest takes it.
+void mu_loot_rolls(int treasure_before, Coord_t const &center) {
+    MuSession *s = mu_self;
+    std::vector<MuSession *> group = sharers(s);
+    if (group.size() < 2 || game.treasure.current_id <= treasure_before) {
+        return;
+    }
+    for (int y = center.y - 4; y <= center.y + 4; y++) {
+        for (int x = center.x - 4; x <= center.x + 4; x++) {
+            if (y <= 0 || x <= 0 || y >= dg.height - 1 || x >= dg.width - 1) {
+                continue;
+            }
+            int id = dg.floor[y][x].treasure_id;
+            if (id < treasure_before || id >= game.treasure.current_id) {
+                continue;
+            }
+            Inventory_t item = game.treasure.list[id];
+            if (item.category_id >= TV_MAX_PICK_UP) {
+                continue; // gold is shared as it is picked up
+            }
+
+            std::vector<MuSession *> rolling = group;
+            std::string rolls;
+            MuSession *winner = nullptr;
+            while (winner == nullptr) {
+                int best = -1;
+                std::vector<MuSession *> top;
+                for (MuSession *p : rolling) {
+                    int roll = randomNumber(100);
+                    rolls += p->char_name + " " + std::to_string(roll) + ", ";
+                    if (roll > best) {
+                        best = roll;
+                        top = {p};
+                    } else if (roll == best) {
+                        top.push_back(p);
+                    }
+                }
+                if (top.size() == 1) {
+                    winner = top[0];
+                } else {
+                    rolling = top;
+                    rolls += "tie: ";
+                }
+            }
+
+            bool taken = false;
+            auto carry = [&] {
+                if (inventoryCanCarryItemCount(item)) {
+                    Inventory_t copy = item;
+                    inventoryCarryItem(copy);
+                    taken = true;
+                }
+            };
+            mu_with_player(s, winner, carry);
+            if (taken) {
+                (void) dungeonDeleteObject(Coord_t{y, x});
+            }
+            obj_desc_t desc;
+            itemDescription(desc, item, true);
+            std::string what = desc;
+            if (!what.empty() && what.back() == '.') {
+                what.pop_back();
+            }
+            std::string line = "[Loot] " + what + ": " + rolls + winner->char_name +
+                               (taken ? " wins it." : " wins, but has no room: it stays on the floor.");
+            for (MuSession *p : group) {
+                say(p, line);
+            }
+        }
+    }
+}
+
+// --- turn-based battles -----------------------------------------------------------
+//
+// Moving is never turn-based: nobody waits for anyone to walk. A party (or
+// guild-mates on a level, outside a party) whose leader turned battle turns
+// on fights in rounds: each member near an awake monster takes one action a
+// round; members farther away are left out until they come near.
+
+bool mu_turn_based(MuSession *s) {
+    if (s->level == nullptr || s->level->depth == 0) {
+        return false;
+    }
+    if (s->party != nullptr) {
+        return s->party->turn_based;
+    }
+    return s->guild_id != 0 && s->guild_turns;
+}
+
+// Those s fights in rounds with: on the level, in the same party or guild.
+static std::vector<MuSession *> round_group(MuSession *s) {
+    std::vector<MuSession *> out;
+    if (!mu_turn_based(s)) {
+        return out;
+    }
+    for (MuSession *p : s->level->players) {
+        bool same = s->party != nullptr ? p->party == s->party : p->party == nullptr && p->guild_id == s->guild_id;
+        if (same) {
+            out.push_back(p);
+        }
+    }
+    return out;
+}
+
+static bool in_battle(MuSession *p) {
+    Coord_t at = p == mu_self ? py.pos : p->ctx.py.pos;
+    for (int i = config::monsters::MON_MIN_INDEX_ID; i < next_free_monster_id; i++) {
+        Monster_t const &m = monsters[i];
+        if (m.hp >= 0 && m.sleep_count == 0 && coordDistanceBetween(at, m.pos) <= MU_BATTLE_RANGE) {
+            return true;
+        }
+    }
+    return false;
+}
+
+MuSession *mu_round_waits_for(MuSession *s) {
+    std::vector<MuSession *> group = round_group(s);
+    if (group.size() < 2 || !s->acted || !in_battle(s)) {
+        return nullptr;
+    }
+    for (MuSession *p : group) {
+        if (p != s && !p->acted && !p->in_building && in_battle(p)) {
+            return p;
+        }
+    }
+    // everyone in the battle has acted: a new round
+    for (MuSession *p : group) {
+        p->acted = false;
+    }
+    return nullptr;
+}
+
+void mu_round_acted(MuSession *s) {
+    std::vector<MuSession *> group = round_group(s);
+    if (group.size() < 2 || !in_battle(s)) {
+        s->acted = false;
+        return;
+    }
+    s->acted = true;
+    for (MuSession *p : group) {
+        if (p != s) {
+            mu_conn_poke(p->conn); // the next one in the round may go
+        }
+    }
+}
+
+void mu_round_skip(MuSession *p) {
+    p->acted = true;
+    say(p, "Your turn in the battle was skipped.");
+}
+
+static void turns_command(MuSession *s, bool guild, const std::string &arg) {
+    if (arg != "on" && arg != "off") {
+        say(s, std::string("Battle turns are ") + (mu_turn_based(s) ? "on" : "off") + " for you. Use /" + (guild ? "guild" : "party") +
+                   " turns on|off.");
+        return;
+    }
+    bool on = arg == "on";
+    if (guild) {
+        if ((mu_guild_perms(s->guild_id, s->guild_rank) & GP_RANKS) == 0 || s->guild_id == 0) {
+            say(s, "Only the guild's leaders set battle turns.");
+            return;
+        }
+        mu_db_run("UPDATE guild SET turn_based = ? WHERE id = ?", "ii", (int64_t) on, s->guild_id);
+        pthread_mutex_lock(&mu_sessions_lock);
+        for (MuSession *p : mu_sessions) {
+            if (p->guild_id == s->guild_id) {
+                p->guild_turns = on;
+                p->acted = false;
+                mu_vt_chat(&p->conn->screen, ("[Guild] Battle turns are now " + arg + ".").c_str());
+            }
+        }
+        pthread_mutex_unlock(&mu_sessions_lock);
+        return;
+    }
+    if (s->party == nullptr || s->party->leader != s) {
+        say(s, "Only the party's leader sets battle turns.");
+        return;
+    }
+    s->party->turn_based = on;
+    for (MuSession *p : s->party->members) {
+        p->acted = false;
+        say(p, "[Party] Battle turns are now " + arg + ".");
+    }
+}
+
+// --- player against player ------------------------------------------------------
+
+// Chosen at creation; changed at most once a day.
+static void pvp_command(MuSession *s, const std::string &arg) {
+    time_t now = time(nullptr);
+    int64_t wait = s->pvp_changed_at + 86400 - (int64_t) now;
+    if (arg != "on" && arg != "off") {
+        say(s, std::string("PvP is ") + (s->pvp ? "on" : "off") +
+                   (wait > 0 ? "; you can change it in " + std::to_string((wait + 3599) / 3600) + " hours." : ". /pvp on or /pvp off."));
+        return;
+    }
+    bool want = arg == "on";
+    if (want == s->pvp) {
+        say(s, std::string("PvP is already ") + arg + ".");
+        return;
+    }
+    if (wait > 0) {
+        say(s, "PvP can be changed once a day; next in " + std::to_string((wait + 3599) / 3600) + " hours.");
+        return;
+    }
+    s->pvp = want;
+    s->pvp_changed_at = (int64_t) now;
+    mu_db_run("UPDATE character SET pvp = ?, pvp_changed_at = ? WHERE id = ?", "iii", (int64_t) want, (int64_t) now, s->char_id);
+    say(s, std::string("PvP is now ") + arg + ".");
+}
+
+// A player is attacked only on purpose: this key, and a direction. Walking
+// into one never attacks.
+static void pvp_attack(MuSession *s) {
+    game.player_free_turn = true;
+    int dir;
+    if (!getAllDirections("Attack which way?", dir)) {
+        return;
+    }
+    Coord_t at{py.pos.y + (dir <= 3 ? 1 : dir >= 7 ? -1 : 0), py.pos.x + (dir % 3 == 1 ? -1 : dir % 3 == 0 ? 1 : 0)};
+    MuSession *t = mu_player_at(at);
+    if (t == nullptr) {
+        printMessage("There is nobody there.");
+    } else if (s->level->depth == 0) {
+        printMessage("The town watch will not have fighting here.");
+    } else if (!s->pvp) {
+        printMessage("You do not fight other players (/pvp on).");
+    } else if (!t->pvp) {
+        printMessage((t->char_name + " does not fight other players.").c_str());
+    } else if (s->party != nullptr && t->party == s->party) {
+        printMessage((t->char_name + " is in your party.").c_str());
+    } else if (py.flags.afraid > 0) {
+        printMessage("You are too afraid!");
+    } else {
+        game.player_free_turn = false;
+        int ac = t->ctx.py.misc.ac + t->ctx.py.misc.magical_ac;
+        int damage = muPlayerMeleeDamage(ac, t->char_name.c_str());
+        if (damage > 0) {
+            t->pending_pvp_damage += damage;
+            t->pvp_attacker = s->char_name;
+            t->event_pending = true;
+        }
+        say(t, damage > 0 ? s->char_name + " strikes you for " + std::to_string(damage) + "!" : s->char_name + " attacks you, and misses.");
+        mu_conn_poke(t->conn);
+        mu_db_audit(s->char_name.c_str(), "pvp", t->char_name.c_str(), std::to_string(damage).c_str());
+    }
+}
+
 // --- guilds -----------------------------------------------------------------
 
 int mu_guild_perms(int64_t guild, int rank) {
@@ -293,10 +607,16 @@ std::string mu_guild_name(int64_t guild) {
 static void load_guild(MuSession *s) {
     s->guild_id = 0;
     s->guild_rank = 0;
-    MuRows *r = mu_db_query("SELECT guild, rank FROM guild_member WHERE account = ?", "i", s->account.id);
+    s->guild_shield = 0;
+    s->guild_turns = false;
+    MuRows *r = mu_db_query("SELECT m.guild, m.rank, g.shield, g.turn_based FROM guild_member m JOIN guild g ON g.id = m.guild WHERE m.account = ?",
+                            "i", s->account.id);
     if (mu_db_next(r)) {
         s->guild_id = mu_db_col_int(r, 0);
         s->guild_rank = (int) mu_db_col_int(r, 1);
+        s->guild_turns = mu_db_col_int(r, 3) != 0;
+        int shield = (int) mu_db_col_int(r, 2);
+        s->guild_shield = shield != 0 ? shield : mu_default_shield(s->guild_id);
     }
     mu_db_done(r);
 }
@@ -529,6 +849,31 @@ static void guild_command(MuSession *s, const std::vector<std::string> &w) {
             mu_db_run("UPDATE guild_rank SET perms = ? WHERE guild = ? AND rank = ?", "iii", (int64_t) perms, s->guild_id, rank);
         }
         say(s, "Rank " + a[0] + " updated.");
+    } else if (sub == "turns") {
+        turns_command(s, true, lower(arg));
+    } else if (sub == "shield") {
+        // the colour every member stands on; the party's and the plain one are not offered
+        if (arg.empty()) {
+            say(s, std::string("Shield: ") + (s->guild_id != 0 ? mu_shield_name(s->guild_shield) : "none") + ". Colours: " + mu_shield_list());
+            return;
+        }
+        if (!need(s, GP_RANKS)) {
+            return;
+        }
+        int colour = mu_shield_by_name(lower(arg));
+        if (colour == 0) {
+            say(s, "Not a guild colour. Choose from: " + mu_shield_list());
+            return;
+        }
+        mu_db_run("UPDATE guild SET shield = ? WHERE id = ?", "ii", (int64_t) colour, s->guild_id);
+        pthread_mutex_lock(&mu_sessions_lock);
+        for (MuSession *p : mu_sessions) {
+            if (p->guild_id == s->guild_id) {
+                p->guild_shield = colour;
+            }
+        }
+        pthread_mutex_unlock(&mu_sessions_lock);
+        to_guild_members(s->guild_id, "[Guild] The guild's shield is now " + lower(arg) + ".");
     } else if (sub == "disband") {
         if (s->guild_id == 0 || s->guild_rank != 0) {
             say(s, "Only the leader can disband the guild.");
@@ -588,7 +933,7 @@ static void guild_command(MuSession *s, const std::vector<std::string> &w) {
             }
         }
         mu_db_done(r);
-        say(s, "/guild invite|join|leave|kick|promote|demote|motd|rank|members|disband");
+        say(s, "/guild invite|join|leave|kick|promote|demote|motd|rank|shield|members|disband");
     }
 }
 
@@ -780,6 +1125,9 @@ static bool moderate(MuSession *s, const std::string &cmd, const std::vector<std
         mu_shutdown_at = now + minutes * 60;
         mu_system_all("*** The server will shut down in " + std::to_string(minutes) + " minutes. ***");
         mu_db_audit(s->account.name, "shutdown", "", std::to_string(minutes).c_str());
+    } else if (cmd == "spawnboss" && role >= 2) {
+        say(s, mu_boss_spawn_beside(s->level) ? "A boss appears beside you." : "No boss here (not in the town, and only beside open floor).");
+        mu_db_audit(s->account.name, "spawnboss", std::to_string(s->level->depth).c_str(), "");
     } else if (cmd == "resetlevel" && role >= 2) {
         int depth = atoi(arg.c_str());
         if (depth <= 0) {
@@ -797,10 +1145,11 @@ static bool moderate(MuSession *s, const std::string &cmd, const std::vector<std
 
 static void help(MuSession *s) {
     say(s, "' then text: say to your level. /w world, /g guild, /p party, /t name msg, /r reply");
-    say(s, "/who  /invite /accept /decline /leave /party /pkick  /trade name  /guild ...");
+    say(s, "/who  /invite /accept /decline /leave /party /pkick  /trade name  /guild ...  /pvp");
+    say(s, "\" then a direction: attack a player (both need PvP on; not in the town).");
     say(s, "Town: 7 Bank, 8 Guild Hall, 9 Auction House.");
     if (s->account.role >= 1) {
-        say(s, "Mod: /kick /mute /goto /inspect" + std::string(s->account.role >= 2 ? "  Admin: /ban /unban /role /broadcast /summon /save /shutdown /resetlevel" : ""));
+        say(s, "Mod: /kick /mute /goto /inspect" + std::string(s->account.role >= 2 ? "  Admin: /ban /unban /role /broadcast /summon /spawnboss /save /shutdown /resetlevel" : ""));
     }
 }
 
@@ -862,17 +1211,26 @@ void mu_social_command(MuSession *s, const std::string &line) {
     } else if (cmd == "leave") {
         party_drop(s);
     } else if (cmd == "party") {
-        party_list(s);
+        if (lower(w.size() > 1 ? w[1] : "") == "turns") {
+            turns_command(s, false, lower(w.size() > 2 ? w[2] : ""));
+        } else {
+            party_list(s);
+        }
     } else if (cmd == "pkick") {
         party_kick(s, rest);
     } else if (cmd == "guild") {
         guild_command(s, words(line.substr(1), 3));
+    } else if (cmd == "pvp") {
+        pvp_command(s, lower(rest));
     } else if (cmd == "trade") {
         mu_trade_request(s, rest);
     } else if (cmd == "help" || cmd == "?") {
         help(s);
     } else if (!moderate(s, cmd, w)) {
         say(s, "Unknown command. /help lists them.");
+    }
+    if (cmd == "accept" || cmd == "leave" || cmd == "pkick" || cmd == "guild") {
+        restyle_everyone();
     }
 }
 
@@ -901,7 +1259,10 @@ void mu_social_entered(MuSession *s) {
 
 void mu_social_left(MuSession *s, bool died) {
     mu_trade_cancel(s);
-    party_drop(s);
+    if (s->party != nullptr) {
+        party_drop(s);
+        restyle_everyone();
+    }
     if (s->guild_id != 0 && !died) {
         to_guild_members(s->guild_id, "[Guild] " + s->char_name + " has gone offline.");
     }
@@ -913,14 +1274,27 @@ bool muCommand(char key) {
     MuSession *s = mu_self;
     if ((unsigned char) key == MU_KEY_EVENT) {
         s->event_pending = false;
-        if (s->trade != nullptr) {
+        game.player_free_turn = true;
+        if (s->pending_pvp_damage > 0) {
+            int damage = s->pending_pvp_damage;
+            s->pending_pvp_damage = 0;
+            playerDisturb(1, 0);
+            printMessage((s->pvp_attacker + " hits you.").c_str());
+            playerTakesHit(damage, s->pvp_attacker.c_str()); // a death ends the turn loop
+        }
+        if (s->trade != nullptr && !game.character_is_dead) {
             mu_trade_screen(s);
         }
+        return true;
+    }
+    if (key == '"') {
+        pvp_attack(s);
         return true;
     }
     if (key != '\'') {
         return false;
     }
+    game.player_free_turn = true;
     MuSafePrompt safe;
     putStringClearToEOL(">", Coord_t{0, 0});
     char buf[80] = {0};

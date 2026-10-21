@@ -52,6 +52,10 @@ void mu_vt_free(MuScreen *s) {
     pthread_mutex_destroy(&s->lock);
 }
 
+void mu_vt_set_attr(MuScreen *s, uint32_t attr) {
+    s->cur_attr = attr;
+}
+
 void mu_vt_move(MuScreen *s, int y, int x) {
     if (y < 0) y = 0;
     if (y >= MU_GAME_ROWS) y = MU_GAME_ROWS - 1;
@@ -70,6 +74,7 @@ void mu_vt_addch(MuScreen *s, char ch) {
     pthread_mutex_lock(&s->lock);
     if (s->cy < MU_GAME_ROWS && s->cx < MU_COLS) {
         s->cell[s->cy][s->cx] = (char) c;
+        s->attr[s->cy][s->cx] = s->cur_attr;
     }
     if (s->cx < MU_COLS - 1) {
         s->cx++;
@@ -91,14 +96,17 @@ void mu_vt_addstr(MuScreen *s, const char *str) {
 void mu_vt_clrtoeol(MuScreen *s) {
     pthread_mutex_lock(&s->lock);
     memset(&s->cell[s->cy][s->cx], ' ', (size_t) (MU_COLS - s->cx));
+    memset(&s->attr[s->cy][s->cx], 0, sizeof(uint32_t) * (size_t) (MU_COLS - s->cx));
     pthread_mutex_unlock(&s->lock);
 }
 
 void mu_vt_clrtobot(MuScreen *s) {
     pthread_mutex_lock(&s->lock);
     memset(&s->cell[s->cy][s->cx], ' ', (size_t) (MU_COLS - s->cx));
+    memset(&s->attr[s->cy][s->cx], 0, sizeof(uint32_t) * (size_t) (MU_COLS - s->cx));
     for (int y = s->cy + 1; y < MU_GAME_ROWS; y++) {
         memset(s->cell[y], ' ', MU_COLS);
+        memset(s->attr[y], 0, sizeof(s->attr[y]));
     }
     pthread_mutex_unlock(&s->lock);
 }
@@ -107,6 +115,7 @@ void mu_vt_clear(MuScreen *s) {
     pthread_mutex_lock(&s->lock);
     for (int y = 0; y < MU_GAME_ROWS; y++) {
         memset(s->cell[y], ' ', MU_COLS);
+        memset(s->attr[y], 0, sizeof(s->attr[y]));
     }
     s->cy = s->cx = 0;
     pthread_mutex_unlock(&s->lock);
@@ -115,12 +124,14 @@ void mu_vt_clear(MuScreen *s) {
 void mu_vt_save(MuScreen *s) {
     pthread_mutex_lock(&s->lock);
     memcpy(s->saved, s->cell, sizeof(s->saved));
+    memcpy(s->saved_attr, s->attr, sizeof(s->saved_attr));
     pthread_mutex_unlock(&s->lock);
 }
 
 void mu_vt_restore(MuScreen *s) {
     pthread_mutex_lock(&s->lock);
     memcpy(s->cell, s->saved, sizeof(s->saved));
+    memcpy(s->attr, s->saved_attr, sizeof(s->saved_attr));
     pthread_mutex_unlock(&s->lock);
 }
 
@@ -134,12 +145,38 @@ static void put_chat_rows(MuScreen *s) {
     for (int i = 0; i < MU_CHAT_ROWS; i++) {
         int y = MU_GAME_ROWS + i;
         memset(s->cell[y], ' ', MU_COLS);
+        memset(s->attr[y], 0, sizeof(s->attr[y]));
         size_t n = strlen(s->chat[i]);
         memcpy(s->cell[y], s->chat[i], n > MU_COLS ? MU_COLS : n);
     }
     // a divider in the first chat row's place would cost a line; the
     // pane starts straight under Umoria's last row instead
     s->chat_dirty = 0;
+}
+
+static int same(MuScreen *s, int y, int x) {
+    return s->cell[y][x] == s->sent[y][x] && s->attr[y][x] == s->sent_attr[y][x];
+}
+
+// SGR for a cell's look, sent only when it differs from the terminal's.
+static void set_look(MuScreen *s, uint32_t attr) {
+    if (attr == s->term_attr) {
+        return;
+    }
+    char buf[48];
+    int n = snprintf(buf, sizeof(buf), "\033[0");
+    if (attr & MU_ATTR_BOLD) {
+        n += snprintf(buf + n, sizeof(buf) - (size_t) n, ";1");
+    }
+    if (attr & (1u << 25)) {
+        n += snprintf(buf + n, sizeof(buf) - (size_t) n, ";38;5;%u", attr & 0xff);
+    }
+    if (attr & (1u << 26)) {
+        n += snprintf(buf + n, sizeof(buf) - (size_t) n, ";48;5;%u", (attr >> 8) & 0xff);
+    }
+    n += snprintf(buf + n, sizeof(buf) - (size_t) n, "m");
+    out_append(s, buf, n);
+    s->term_attr = attr;
 }
 
 // Called with the lock held.
@@ -153,13 +190,15 @@ static void flush_locked(MuScreen *s) {
     if (s->full_redraw) {
         out_append(s, "\033[0m\033[H\033[2J", 11);
         memset(s->sent, ' ', sizeof(s->sent));
+        memset(s->sent_attr, 0, sizeof(s->sent_attr));
+        s->term_attr = 0;
         s->full_redraw = 0;
     }
 
     for (int y = 0; y < MU_ROWS; y++) {
         int x = 0;
         while (x < MU_COLS) {
-            if (s->cell[y][x] == s->sent[y][x]) {
+            if (same(s, y, x)) {
                 x++;
                 continue;
             }
@@ -167,12 +206,12 @@ static void flush_locked(MuScreen *s) {
             // join runs separated by a few equal cells: one jump, not several
             int end = x;
             while (end < MU_COLS) {
-                if (s->cell[y][end] != s->sent[y][end]) {
+                if (!same(s, y, end)) {
                     end++;
                     continue;
                 }
                 int gap = 0;
-                while (end + gap < MU_COLS && gap < 4 && s->cell[y][end + gap] == s->sent[y][end + gap]) {
+                while (end + gap < MU_COLS && gap < 4 && same(s, y, end + gap)) {
                     gap++;
                 }
                 if (end + gap >= MU_COLS || gap >= 4) {
@@ -182,12 +221,17 @@ static void flush_locked(MuScreen *s) {
             }
             int n = snprintf(buf, sizeof(buf), "\033[%d;%dH", y + 1, start + 1);
             out_append(s, buf, n);
-            out_append(s, &s->cell[y][start], end - start);
+            for (int i = start; i < end; i++) {
+                set_look(s, s->attr[y][i]);
+                out_append(s, &s->cell[y][i], 1);
+            }
             memcpy(&s->sent[y][start], &s->cell[y][start], (size_t) (end - start));
+            memcpy(&s->sent_attr[y][start], &s->attr[y][start], sizeof(uint32_t) * (size_t) (end - start));
             x = end;
         }
     }
 
+    set_look(s, 0);
     int n = snprintf(buf, sizeof(buf), "\033[%d;%dH", s->cy + 1, s->cx + 1);
     out_append(s, buf, n);
 }

@@ -83,6 +83,12 @@ static const char *SCHEMA_V1 =
     " id INTEGER PRIMARY KEY, at INTEGER NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL,"
     " target TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '');";
 
+static const char *SCHEMA_V2 =
+    "ALTER TABLE guild ADD COLUMN shield INTEGER NOT NULL DEFAULT 0;"
+    "ALTER TABLE guild ADD COLUMN turn_based INTEGER NOT NULL DEFAULT 0;"
+    "ALTER TABLE character ADD COLUMN pvp INTEGER NOT NULL DEFAULT 0;"
+    "ALTER TABLE character ADD COLUMN pvp_changed_at INTEGER NOT NULL DEFAULT 0;";
+
 static int exec(const char *sql) {
     char *err = NULL;
     if (sqlite3_exec(db, sql, NULL, NULL, &err) != SQLITE_OK) {
@@ -110,6 +116,12 @@ int mu_db_open(const char *path) {
     int version = (int) mu_db_int("PRAGMA user_version", 0, "");
     if (version < 1) {
         if (exec("BEGIN") != 0 || exec(SCHEMA_V1) != 0 || exec("PRAGMA user_version = 1") != 0 || exec("COMMIT") != 0) {
+            return -1;
+        }
+    }
+    if (version < 2) {
+        // guild shield colours; PvP chosen per character, changed once a day
+        if (exec("BEGIN") != 0 || exec(SCHEMA_V2) != 0 || exec("PRAGMA user_version = 2") != 0 || exec("COMMIT") != 0) {
             return -1;
         }
     }

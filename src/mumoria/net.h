@@ -52,6 +52,9 @@ void mu_net_serve(int listen_fd, void (*on_conn)(MuConn *conn));
 // or MU_KEY_POKED when mu_conn_poke() was called and poke_wakes is set.
 int mu_conn_key(MuConn *c, int timeout_ms, int poke_wakes);
 int mu_conn_has_key(MuConn *c);
+// Waits up to timeout_ms for a poke, leaving any keys queued: MU_KEY_POKED,
+// MU_KEY_TIMEOUT or MU_KEY_CLOSED.
+int mu_conn_wait(MuConn *c, int timeout_ms);
 void mu_conn_poke(MuConn *c);
 void mu_conn_kill(MuConn *c);
 void mu_conn_release(MuConn *c);

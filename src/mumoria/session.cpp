@@ -16,6 +16,8 @@ std::vector<MuSession *> mu_sessions;
 
 extern const char *mu_aol_secret; // server_main.cpp
 
+static void record_death(MuSession *s);
+
 // --- screen helpers before the game (no world lock: the engine is not used) ----
 
 static void put(int y, int x, const std::string &text) {
@@ -314,9 +316,13 @@ static void play(MuSession *s, int64_t char_id) {
             if (!name_character(s)) {
                 throw MuSessionEnd{MuSessionEnd::Quit, "no name"};
             }
+            // PvP is the character's choice, made here; /pvp changes it once a day
+            s->pvp = getInputConfirmation("Allow other players to fight this character (PvP)?");
+            s->pvp_changed_at = 0;
+            mu_db_run("UPDATE character SET pvp = ? WHERE id = ?", "ii", (int64_t) s->pvp, s->char_id);
         } else {
-            MuRows *r = mu_db_query("SELECT save, depth, name FROM character WHERE id = ? AND account = ? AND alive = 1", "ii", char_id,
-                                    s->account.id);
+            MuRows *r = mu_db_query("SELECT save, depth, name, pvp, pvp_changed_at FROM character WHERE id = ? AND account = ? AND alive = 1",
+                                    "ii", char_id, s->account.id);
             std::vector<uint8_t> blob;
             if (mu_db_next(r)) {
                 int len = 0;
@@ -326,6 +332,8 @@ static void play(MuSession *s, int64_t char_id) {
                 }
                 depth = (int) mu_db_col_int(r, 1);
                 s->char_name = mu_db_col_text(r, 2);
+                s->pvp = mu_db_col_int(r, 3) != 0;
+                s->pvp_changed_at = mu_db_col_int(r, 4);
             }
             mu_db_done(r);
             playerInitializeBaseExperienceLevels();
@@ -345,6 +353,16 @@ static void play(MuSession *s, int64_t char_id) {
         // still reach a -more- prompt: it must not wait or throw again.
         s->closing = true;
         fprintf(stderr, "mumoria: %s left the game (%d %s)\n", s->account.name, (int) end.why, end.text.c_str());
+        // a blow from another player still lands when its target hangs up
+        if (end.why != MuSessionEnd::Died && s->in_game && s->pending_pvp_damage > 0) {
+            py.misc.current_hp -= s->pending_pvp_damage;
+            s->pending_pvp_damage = 0;
+            if (py.misc.current_hp < 0) {
+                game.character_is_dead = true;
+                snprintf(game.character_died_from, sizeof(game.character_died_from), "%s", s->pvp_attacker.c_str());
+                record_death(s);
+            }
+        }
         if (end.why != MuSessionEnd::Died && s->in_game && !game.character_is_dead) {
             mu_char_store(s);
         }
@@ -458,12 +476,20 @@ static void apply_pending(MuSession *s) {
         s->pending_exp = 0;
         displayCharacterExperience();
     }
+    if (s->gold_dirty) {
+        s->gold_dirty = false;
+        printCharacterGoldValue();
+    }
 }
 
 int muGetKey() {
     MuSession *s = mu_self;
     if (s->closing) {
         return ESCAPE;
+    }
+    // struck by a player, or asked into a trade, while busy elsewhere
+    if (s->at_top && (s->event_pending || s->pending_pvp_damage > 0)) {
+        return MU_KEY_EVENT;
     }
     bool safe = s->safe_depth > 0 || s->level == nullptr;
     long waited_ms = 0;
@@ -472,6 +498,31 @@ int muGetKey() {
         apply_pending(s);
         if (s->view_stale) {
             refresh_view(s);
+        }
+        // a turn-based battle: wait for the others in it to take their turns
+        time_t since = time(nullptr);
+        bool said = false;
+        for (MuSession *w = mu_round_waits_for(s); w != nullptr; w = mu_round_waits_for(s)) {
+            putStringClearToEOL("Waiting for " + w->char_name + " to take their turn...", Coord_t{0, 0});
+            putQIO();
+            said = true;
+            mu_world_unlock(s, false);
+            int r = mu_conn_wait(s->conn, 500);
+            mu_world_lock(s);
+            if (r == MU_KEY_CLOSED) {
+                hang_up(s);
+            }
+            if (s->view_stale) {
+                refresh_view(s);
+            }
+            if (time(nullptr) - since >= MU_ROUND_TIMEOUT) {
+                mu_round_skip(w);
+                since = time(nullptr);
+            }
+        }
+        if (said) {
+            messageLineClear();
+            putQIO();
         }
     }
     mu_world_unlock(s, !safe);
@@ -506,8 +557,16 @@ int muGetKey() {
 
         waited_ms += 250;
         time_t now = time(nullptr);
-        // stopped mid-action while others on the level wait: carry on for them
-        if (!safe && s->level != nullptr && waited_ms >= MU_BUSY_TIMEOUT_MS && mu_level_waiters(s->level) > 0) {
+        // stopped mid-action while others on the level wait: carry on for
+        // them - at once, unless this is a turn-based group's battle. What
+        // the message line said is kept in the chat pane.
+        long hold_ms = mu_turn_based(s) ? MU_BUSY_TIMEOUT_MS : 0;
+        if (!safe && s->level != nullptr && waited_ms >= hold_ms && mu_level_waiters(s->level) > 0) {
+            std::string said(mu_vt_current->cell[0], MU_COLS);
+            said.erase(said.find_last_not_of(' ') + 1);
+            if (!said.empty()) {
+                mu_system(s, said);
+            }
             k = ESCAPE;
             break;
         }
@@ -556,8 +615,8 @@ void muExitProgram(const char *why) {
     throw MuSessionEnd{MuSessionEnd::Quit, why != nullptr ? why : ""};
 }
 
-void muEndGame() {
-    MuSession *s = mu_self;
+// The graveyard, the character gone, and the news (lock held, s loaded).
+static void record_death(MuSession *s) {
     int depth = s->level != nullptr ? s->level->depth : 0;
     const char *how = game.total_winner ? "retired a Total Winner" : game.character_died_from;
     mu_db_run("INSERT INTO graveyard (account, name, race, class, level, depth, exp, died_from, died_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -570,11 +629,16 @@ void muEndGame() {
              mu_depth_name(depth, where, sizeof(where)));
     mu_system_all(line);
     fprintf(stderr, "mumoria: %s\n", line);
+}
+
+void muEndGame() {
+    record_death(mu_self);
     throw MuSessionEnd{MuSessionEnd::Died, ""};
 }
 
 void muTurnDone() {
     mu_self->did_act = true;
+    mu_round_acted(mu_self);
 }
 
 void muNewLevel() {

@@ -657,9 +657,25 @@ static void auction_screen(MuSession *s) {
     }
 }
 
+// Inside a building a player is not drawn and blocks nobody (world.cpp
+// mu_player_at); the others' maps are told as they go in and come out.
+static void set_inside(MuSession *s, bool inside) {
+    s->in_building = inside;
+    if (s->level != nullptr) {
+        mu_poke_level(s->level, s);
+    }
+}
+
+struct Inside {
+    MuSession *s;
+    explicit Inside(MuSession *who) : s(who) { set_inside(s, true); }
+    ~Inside() { set_inside(s, false); }
+};
+
 void muEnterBuilding(int sub_category_id) {
     MuSession *s = mu_self;
     MuSafePrompt safe;
+    Inside inside(s);
     switch (sub_category_id) {
         case 107:
             bank_screen(s);
@@ -714,12 +730,14 @@ bool muStoreEnter(int store_id) {
         return false;
     }
     store_owner[store_id] = mu_self->account.id;
+    set_inside(mu_self, true);
     return true;
 }
 
 void muStoreLeave(int store_id) {
     if (store_owner[store_id] == mu_self->account.id) {
         store_owner[store_id] = 0;
+        set_inside(mu_self, false);
     }
 }
 

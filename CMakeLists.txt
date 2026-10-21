@@ -301,6 +301,7 @@ if (NOT WIN32)
             ${source_dir}/mumoria/net.c
             ${source_dir}/mumoria/vterm.c
             ${source_dir}/mumoria/boss.cpp
+            ${source_dir}/mumoria/colour.cpp
             ${source_dir}/mumoria/screens.cpp
             ${source_dir}/mumoria/server_main.cpp
             ${source_dir}/mumoria/session.cpp

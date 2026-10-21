@@ -38,6 +38,8 @@ struct MuSession {
     int64_t pending_exp = 0;
 
     MuParty *party = nullptr;
+    bool guild_turns = false; // the guild runs turn-based battles
+    bool acted = false;       // took this battle round's action
     int64_t invited_by = 0;  // account that invited us to a party
     int64_t trade_asked = 0; // account we asked to trade
     int pending_depth = -1;  // /goto, /summon: the level to go to
@@ -47,6 +49,14 @@ struct MuSession {
     MuTrade *trade = nullptr;
     int64_t guild_id = 0;
     int guild_rank = 0;
+    int guild_shield = 0;     // xterm colour of the guild's shield
+    bool in_building = false; // inside a shop or hall: not drawn, blocks nobody
+    bool gold_dirty = false;  // others credited shared gold: redraw it
+    int64_t gold_fraction = 0; // shared gold below one piece, in hundredths
+    bool pvp = false;
+    int64_t pvp_changed_at = 0;
+    int pending_pvp_damage = 0; // struck by another player: applied on our turn
+    std::string pvp_attacker;
     MuSession *arrive_near = nullptr; // /goto, /summon: arrive beside them
 };
 

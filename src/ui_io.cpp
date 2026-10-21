@@ -221,6 +221,10 @@ void panelMoveCursor(Coord_t coord) {
 // Outputs a char to a given interpolated y, x position -RAK-
 // sign bit of a character used to indicate standout mode. -CJS
 void panelPutTile(char ch, Coord_t coord) {
+#ifdef MUMORIA
+    // players: class colour, bold, on their shield (colour.cpp)
+    mu_vt_set_attr(mu_vt_current, ch == '@' ? muTileAttr(coord) : 0);
+#endif
     // Real coords convert to screen positions
     coord.y -= dg.panel.row_prt;
     coord.x -= dg.panel.col_prt;
@@ -228,6 +232,9 @@ void panelPutTile(char ch, Coord_t coord) {
     if (mvaddch(coord.y, coord.x, ch) == ERR) {
         abort();
     }
+#ifdef MUMORIA
+    mu_vt_set_attr(mu_vt_current, 0);
+#endif
 }
 
 static Coord_t currentCursorPosition() {

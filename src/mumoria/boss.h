@@ -10,3 +10,5 @@ bool mu_boss_level(int depth);
 void mu_boss_place(MuLevel *level);
 // Says so when a player arrives on a level whose boss is alive.
 void mu_boss_announce(MuSession *s, MuLevel *level);
+// An admin's event: a boss, awake, beside the loaded player (lock held).
+bool mu_boss_spawn_beside(MuLevel *level);

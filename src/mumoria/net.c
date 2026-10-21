@@ -344,6 +344,32 @@ int mu_conn_has_key(MuConn *c) {
     return has;
 }
 
+int mu_conn_wait(MuConn *c, int timeout_ms) {
+    struct timespec until;
+    clock_gettime(CLOCK_REALTIME, &until);
+    until.tv_sec += timeout_ms / 1000;
+    until.tv_nsec += (long) (timeout_ms % 1000) * 1000000L;
+    if (until.tv_nsec >= 1000000000L) {
+        until.tv_sec++;
+        until.tv_nsec -= 1000000000L;
+    }
+    pthread_mutex_lock(&c->lock);
+    int result = MU_KEY_TIMEOUT;
+    while (!c->closed && !c->kill && !c->poked) {
+        if (pthread_cond_timedwait(&c->cond, &c->lock, &until) != 0) {
+            break;
+        }
+    }
+    if (c->closed || c->kill) {
+        result = MU_KEY_CLOSED;
+    } else if (c->poked) {
+        c->poked = 0;
+        result = MU_KEY_POKED;
+    }
+    pthread_mutex_unlock(&c->lock);
+    return result;
+}
+
 void mu_conn_poke(MuConn *c) {
     pthread_mutex_lock(&c->lock);
     c->poked = 1;

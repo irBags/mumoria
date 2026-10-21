@@ -7,7 +7,10 @@
 
 #define MU_AUTOSAVE_SECONDS 120
 #define MU_IDLE_SECONDS (30 * 60)
-#define MU_BUSY_TIMEOUT_MS 5000 // longest a player stopped mid-action holds their level
+#define MU_BUSY_TIMEOUT_MS 5000 // turn-based groups: longest a stopped member holds the level
+#define MU_BATTLE_RANGE 10      // squares: a member this near an awake monster is in the battle
+#define MU_ROUND_TIMEOUT 20     // seconds before a battle round skips a member who has not acted
+#define MU_NEW_MONSTER_MIN 40   // the most often a new monster can turn up: 1 turn in 40
 
 #define MU_LEVEL_SAVE_SECONDS 60
 #define MU_LEVEL_UNLOAD_SECONDS 600

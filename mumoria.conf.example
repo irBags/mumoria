@@ -7,6 +7,11 @@ db = mumoria.db
 # Gold to found a guild.
 guild_cost = 1000
 
+# Shared gold in a party or guild run: each member gets
+# (gold + (level - 1) x this) / members. 0.5 makes 12 gold between 5 worth
+# 2.4 each on 50 ft, 2.5 on 100 ft, 2.6 on 150 ft.
+party_gold_per_level = 0.5
+
 # Mirror world chat to an IRC channel: the P3OL/AOL chat rooms are IRC, so
 # members in that room talk with the players. Leave irc_host empty for none.
 irc_host =

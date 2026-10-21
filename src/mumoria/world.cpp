@@ -137,15 +137,15 @@ static void save_player(MuSession *s) {
     if (s->level != nullptr && s->level == loaded_level) {
         size_t bytes = (size_t) MAX_HEIGHT * MAX_WIDTH / 8 + 1;
         c.marks.assign(bytes, 0);
-        c.lights.assign(bytes, 0);
+        c.lit.assign(bytes, 0);
         for (int y = 0; y < dg.height; y++) {
             for (int x = 0; x < dg.width; x++) {
                 int bit = y * MAX_WIDTH + x;
                 if (dg.floor[y][x].field_mark) {
                     c.marks[bit >> 3] |= (uint8_t) (1 << (bit & 7));
                 }
-                if (dg.floor[y][x].temporary_light) {
-                    c.lights[bit >> 3] |= (uint8_t) (1 << (bit & 7));
+                if (dg.floor[y][x].permanent_light) {
+                    c.lit[bit >> 3] |= (uint8_t) (1 << (bit & 7));
                 }
             }
         }
@@ -164,6 +164,31 @@ static void stand_player() {
         py.pos = spot;
     }
     dg.floor[py.pos.y][py.pos.x].creature_id = 1;
+}
+
+// Every lamp on the level lights the squares around its bearer, for all to
+// see; where a player was is dark again once they move (it is relit from
+// where they are each time someone is loaded). Your own lamp is Umoria's
+// sub1MoveLight 3x3; others' light shows but is not remembered.
+static void light_around(Coord_t const &c) {
+    for (int y = c.y - 1; y <= c.y + 1; y++) {
+        for (int x = c.x - 1; x <= c.x + 1; x++) {
+            if (y >= 0 && x >= 0 && y < dg.height && x < dg.width) {
+                dg.floor[y][x].temporary_light = true;
+            }
+        }
+    }
+}
+
+static void light_lamps(MuSession *s) {
+    if (py.carrying_light && py.flags.blind == 0) {
+        light_around(py.pos);
+    }
+    for (MuSession *p : s->level->players) {
+        if (p != s && !p->in_building && p->ctx.py.carrying_light && in_level(p->ctx.py.pos)) {
+            light_around(p->ctx.py.pos);
+        }
+    }
 }
 
 static void load_player(MuSession *s) {
@@ -192,14 +217,19 @@ static void load_player(MuSession *s) {
 
     if (s->level != nullptr && s->level == loaded_level) {
         bool have = c.marks_depth == s->level->depth && !c.marks.empty();
+        bool dungeon = s->level->depth > 0; // the town's light is daylight, shared
         for (int y = 0; y < dg.height; y++) {
             for (int x = 0; x < dg.width; x++) {
                 int bit = y * MAX_WIDTH + x;
                 dg.floor[y][x].field_mark = have && (c.marks[bit >> 3] & (1 << (bit & 7)));
-                dg.floor[y][x].temporary_light = have && (c.lights[bit >> 3] & (1 << (bit & 7)));
+                if (dungeon) {
+                    dg.floor[y][x].permanent_light = have && (c.lit[bit >> 3] & (1 << (bit & 7)));
+                }
+                dg.floor[y][x].temporary_light = false;
             }
         }
         stand_player();
+        light_lamps(s);
         for (int i = config::monsters::MON_MIN_INDEX_ID; i < next_free_monster_id; i++) {
             monsters[i].distance_from_player = (uint8_t) coordDistanceBetween(py.pos, monsters[i].pos);
         }
@@ -405,6 +435,9 @@ void mu_enter_game(MuSession *s, int depth) {
         for (int x = 0; x < dg.width; x++) {
             dg.floor[y][x].field_mark = false;
             dg.floor[y][x].temporary_light = false;
+            if (depth > 0) {
+                dg.floor[y][x].permanent_light = false; // a new arrival has lit nothing yet
+            }
             if (dg.floor[y][x].creature_id == 1) {
                 dg.floor[y][x].creature_id = 0; // stale, from whoever was loaded when it was saved
             }
@@ -420,9 +453,10 @@ void mu_enter_game(MuSession *s, int depth) {
 
     s->level = L;
     s->ctx.marks.clear();
-    s->ctx.lights.clear();
+    s->ctx.lit.clear();
     s->ctx.marks_depth = depth;
     L->players.push_back(s);
+    light_lamps(s);
     L->empty_since = 0;
     loaded_player = s;
     if (std::find(mu_players.begin(), mu_players.end(), s) == mu_players.end()) {
@@ -627,20 +661,29 @@ const char *mu_depth_name(int depth, char *buf, size_t max) {
 
 // --- engine hooks about other players ------------------------------------------
 
-bool muOtherPlayerAt(Coord_t const &coord) {
-    return muOtherPlayerNameAt(coord) != nullptr;
+MuScreen *mu_screen_of(MuSession *s) {
+    return &s->conn->screen;
 }
 
-const char *muOtherPlayerNameAt(Coord_t const &coord) {
+MuSession *mu_player_at(Coord_t const &coord) {
     if (loaded_level == nullptr) {
         return nullptr;
     }
     for (MuSession *p : loaded_level->players) {
-        if (p != loaded_player && p->ctx.py.pos.y == coord.y && p->ctx.py.pos.x == coord.x) {
-            return p->char_name.c_str();
+        if (p != loaded_player && !p->in_building && p->ctx.py.pos.y == coord.y && p->ctx.py.pos.x == coord.x) {
+            return p;
         }
     }
     return nullptr;
+}
+
+bool muOtherPlayerAt(Coord_t const &coord) {
+    return mu_player_at(coord) != nullptr;
+}
+
+const char *muOtherPlayerNameAt(Coord_t const &coord) {
+    MuSession *p = mu_player_at(coord);
+    return p != nullptr ? p->char_name.c_str() : nullptr;
 }
 
 bool muNearerPlayer(Coord_t const &coord, int distance) {
@@ -653,6 +696,30 @@ bool muNearerPlayer(Coord_t const &coord, int distance) {
         }
     }
     return false;
+}
+
+int muNewMonsterChance() {
+    int chance = config::monsters::MON_CHANCE_OF_NEW;
+    if (loaded_level == nullptr || loaded_level->depth == 0) {
+        return chance;
+    }
+    // a party, or guild-mates together, count once; each lone player counts
+    std::vector<const void *> teams;
+    for (MuSession *p : loaded_level->players) {
+        const void *team = p->party != nullptr ? (const void *) p->party : (const void *) p;
+        if (p->party == nullptr && p->guild_id != 0) {
+            for (MuSession *q : loaded_level->players) {
+                if (q != p && q->party == nullptr && q->guild_id == p->guild_id) {
+                    team = (const void *) (intptr_t) p->guild_id;
+                }
+            }
+        }
+        if (std::find(teams.begin(), teams.end(), team) == teams.end()) {
+            teams.push_back(team);
+        }
+    }
+    chance /= teams.empty() ? 1 : (int) teams.size();
+    return chance < MU_NEW_MONSTER_MIN ? MU_NEW_MONSTER_MIN : chance;
 }
 
 void muFindSpot(Coord_t &coord) {

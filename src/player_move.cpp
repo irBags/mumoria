@@ -385,10 +385,16 @@ static void carry(Coord_t coord, bool pickup) {
 
     // There's GOLD in them thar hills!
     if (tile_flags == TV_GOLD) {
+#ifdef MUMORIA
+        // shared out in a party or guild (social.cpp)
+        itemDescription(description, item, true);
+        (void) snprintf(msg, MORIA_OBJ_DESC_SIZE, "%s", muGoldFound(item.cost, description).c_str());
+#else
         py.misc.au += item.cost;
 
         itemDescription(description, item, true);
         (void) snprintf(msg, MORIA_OBJ_DESC_SIZE, "You have found %d gold pieces worth of %s", item.cost, description);
+#endif
 
         printCharacterGoldValue();
         (void) dungeonDeleteObject(coord);
@@ -452,9 +458,9 @@ void playerMove(int direction, bool do_pickup) {
     Monster_t const &monster = monsters[tile.creature_id];
 
 #ifdef MUMORIA
-    // players block each other; bumping costs no turn. A shop's doorway is
-    // shared: whoever is inside a shop is standing on its door.
-    bool doorway = tile.treasure_id != 0 && game.treasure.list[tile.treasure_id].category_id == TV_STORE_DOOR;
+    // players block each other; bumping costs no turn (never an attack). A
+    // town building's doorway is shared: whoever is inside stands on it.
+    bool doorway = dg.current_level == 0 && tile.treasure_id != 0 && game.treasure.list[tile.treasure_id].category_id == TV_STORE_DOOR;
     if (tile.creature_id < 2 && !doorway) {
         const char *other = muOtherPlayerNameAt(coord);
         if (other != nullptr) {

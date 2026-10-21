@@ -10,6 +10,7 @@
 
 #include "mu_config.h"
 #include "session.h"
+#include "social.h"
 
 bool mu_boss_level(int depth) {
     return depth > 0 && depth % MU_BOSS_INTERVAL == 0;
@@ -38,22 +39,26 @@ static int pick_creature(int depth) {
     return found.empty() ? -1 : found[(size_t) (randomNumber((int) found.size()) - 1)];
 }
 
-static void place_boss(MuLevel *level) {
+// beside: next to the loaded player (an admin's /spawnboss); else far from them.
+static bool place_boss(MuLevel *level, bool beside = false) {
     int creature = pick_creature(level->depth);
     if (creature < 0) {
-        return;
+        return false;
     }
     for (int tries = 0; tries < 5000; tries++) {
         Coord_t c{(int32_t) randomNumber(dg.height - 2), (int32_t) randomNumber(dg.width - 2)};
+        if (beside) {
+            c = Coord_t{py.pos.y + (int32_t) randomNumber(3) - 2, py.pos.x + (int32_t) randomNumber(3) - 2};
+        }
         Tile_t const &t = dg.floor[c.y][c.x];
         if (t.feature_id >= MIN_CLOSED_SPACE || t.creature_id != 0 || t.treasure_id != 0 || muOtherPlayerAt(c)) {
             continue;
         }
-        if (py.pos.y > 0 && coordDistanceBetween(c, py.pos) < 20) {
+        if (!beside && py.pos.y > 0 && coordDistanceBetween(c, py.pos) < 20) {
             continue;
         }
-        if (!monsterPlaceNew(c, creature, true)) {
-            return;
+        if (!monsterPlaceNew(c, creature, !beside)) {
+            return false;
         }
         Monster_t &m = monsters[dg.floor[c.y][c.x].creature_id];
         m.mu_boss = 1;
@@ -64,8 +69,17 @@ static void place_boss(MuLevel *level) {
         }
         level->boss_dead_at = 0;
         level->dirty = true;
-        return;
+        return true;
     }
+    return false;
+}
+
+bool mu_boss_spawn_beside(MuLevel *level) {
+    if (level->depth == 0 || !place_boss(level, true)) {
+        return false;
+    }
+    updateMonsters(false);
+    return true;
 }
 
 void mu_boss_place(MuLevel *level) {
@@ -105,11 +119,8 @@ static bool loot_spot(Coord_t const &center, Coord_t &out) {
     return false;
 }
 
-void muMonsterDies(int monster_id) {
+static void boss_dies(int monster_id) {
     Monster_t &m = monsters[monster_id];
-    if (m.mu_boss == 0) {
-        return;
-    }
     m.mu_boss = 0;
     MuSession *s = mu_self;
     int depth = dg.current_level;
@@ -154,4 +165,13 @@ void muMonsterDies(int monster_id) {
     }
     char where[32];
     mu_system_all(s->char_name + " has slain " + name + ", the boss of " + mu_depth_name(depth, where, sizeof(where)) + "!");
+}
+
+void muMonsterDies(int monster_id, int treasure_before) {
+    Monster_t &m = monsters[monster_id];
+    Coord_t center{m.pos.y, m.pos.x};
+    if (m.mu_boss != 0) {
+        boss_dies(monster_id);
+    }
+    mu_loot_rolls(treasure_before, center);
 }

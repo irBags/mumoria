@@ -47,11 +47,17 @@ A prompt that comes **before** anything has changed is safe to wait at. That
 covers the command prompt, item and direction pickers, the spell list,
 shops, the Mumoria screens and the chat line (`MuSafePrompt`). Anywhere
 else, most often a `-more-` while monsters are acting, the player is stopped
-part-way through changing their level. Their level is **held**: players on
-other levels carry on, and players on the same level wait. A held prompt
-answers itself (ESC) after `MU_BUSY_TIMEOUT_MS` (5 s), but only when
-somebody is waiting. Pausing there is safe because the world restores that
-level byte for byte before the player resumes.
+part-way through changing their level, and their level is **held**. Players
+on other levels carry on. Pausing there is safe because the world restores
+that level byte for byte before the player resumes.
+
+Nobody waits for another player's movement:
+
+* **Town, and the dungeon outside a turn-based group:** a held prompt answers
+  itself (ESC) as soon as anyone else needs the level. Whatever the message
+  line said is copied into the chat pane, so it is not lost.
+* **A turn-based group in battle (2.5):** the prompt waits up to
+  `MU_BUSY_TIMEOUT_MS` (5 s) for its player.
 
 Two further rules:
 
@@ -67,12 +73,23 @@ Two further rules:
 | `py`, `game` (except the floor items), `dg.panel` | `dg.floor`, height, width, game turn |
 | `objects_identified`, `creature_recall` | `monsters[]`, `next_free_monster_id`, `monster_multiply_total` |
 | message history, run state, options | `game.treasure` (the items on the floor) |
-| field marks and lamp light (as bitmaps) | the boss state |
+| what they remember: field marks, and below the town permanent light (bitmaps) | the boss state |
 
-Field marks (what a player remembers seeing) and lamp light are per player.
-They are written into the shared floor when that player is loaded. Only the
-loaded player's square carries `creature_id == 1`, so a monster can only ever
-strike the player whose turn it is.
+What a player remembers is per player:
+
+* **Field marks.**
+* **Permanent light, below the town.** There Umoria uses it only for what the
+  player has lit: rooms they have entered, and walls their torch has shown.
+
+Both are written into the shared floor when that player is loaded.
+
+**Lamp light** is not kept. Each time someone is loaded, every lamp on the
+level is lit again at its bearer's square (Umoria's 3x3). So you see the
+squares around other players as they move within your screen, and the place
+a player has left goes dark for you again.
+
+Only the loaded player's square carries `creature_id == 1`, so a monster can
+only ever strike the player whose turn it is.
 
 ### Monsters with more than one player
 
@@ -81,6 +98,17 @@ acts only on the turns of the player **nearest** to it. A monster chasing
 player A moves on A's turns. A player who stands still is not hunted in the
 meantime, which is what Umoria's turn-based pace already means. Other players
 block both monsters and players. Bumping into one prints "Name is in your way."
+It never attacks; PvP has its own key (2.17).
+
+**Movement is never turn-based.** Each player's keys run as soon as they
+arrive; nobody waits for anyone else to walk, in the town or in the dungeon.
+
+**More players, more monsters.** Umoria's 1-in-160 chance of a new monster
+each turn is divided by the number of **teams** exploring the level
+(`muNewMonsterChance`). A party counts as one team, guild-mates outside a
+party count as one, and each player alone counts as one. The chance never
+goes above 1 in 40. One player cannot clear a level for everyone else who
+comes through. The town keeps Umoria's own townspeople.
 
 ## 2. Requirements, one by one
 
@@ -110,7 +138,8 @@ steps, and what stays compatible.
 * **Files:** `src/mumoria/db.c`, `db.h`, `sqlite3_min.h` (the subset of the
   SQLite API, so the build needs only the system's `libsqlite3.so.0`).
 * **DB:** `mumoria.db`, WAL mode, `PRAGMA user_version` migrations. The
-  schema is in `db.c` (`SCHEMA_V1`).
+  schema is in `db.c`: `SCHEMA_V1`, then `SCHEMA_V2`, which adds the guild
+  shield, guild battle turns and the per-character PvP flag.
 * **Characters** are Umoria's own save format (`saveGame`/`loadGame`),
   written through a temporary file into `character.save`. An existing
   `game.sav` from single player can be imported, which is the backward
@@ -158,9 +187,32 @@ steps, and what stays compatible.
   port.
 * **Rules (from the python port):** five members at most. A kill shares its
   experience between the members on that level, at
-  `exp * (100 + 6n) / (100n)` each. Whoever finds gold keeps it.
+  `exp * (100 + 6n) / (100n)` each.
 * **Steps:** the share is credited straight into each member's context, and
   their level-up is run when they are next loaded.
+* **All gold is shared** among the party members on the level. Outside a
+  party, guild-mates on the level share it (a guild run). Each member gets
+  `(gold + (level - 1) x party_gold_per_level) / members`, with
+  `party_gold_per_level` 0.5 by default in `mumoria.conf`. For example:
+  * 12 gold on 50 ft between 5: 2.4 each
+  * on 100 ft: 2.5 each
+  * on 150 ft: 2.6 each
+
+  Fractions of a piece are kept for each player (`MuSession::gold_fraction`,
+  in hundredths), so nothing is lost by rounding. Code: `social.cpp`
+  `muGoldFound`.
+* **Loot is rolled for.** Items a monster drops while a party or guild-mates
+  share its level are rolled for, d100 each, ties rolling again. The highest
+  roll takes the item straight into their pack, or it stays on the floor if
+  they have no room. Everyone sees the rolls (`mu_loot_rolls`).
+* **Battle turns (`/party turns on|off`, the leader):** in battle, members
+  take one action each per round. A member counts as in the battle when an
+  awake monster is within `MU_BATTLE_RANGE` (10) squares. Those farther away
+  are left out of the rounds until they come near. A member who has acted
+  sees "Waiting for X to take their turn...". Anyone who has not acted
+  within `MU_ROUND_TIMEOUT` (20 s) is skipped. With turns off, nobody ever
+  waits. Code: `social.cpp` `mu_round_*`, and the wait is in
+  `session.cpp` `muGetKey`.
 
 ### 2.6 to 2.8 Guilds, ranks and permissions, guild banks
 
@@ -182,9 +234,18 @@ steps, and what stays compatible.
 * Founding a guild costs `guild_cost` gold (`mumoria.conf`, 1000 by default),
   paid from what the character carries. Founded at the Guild Hall (`c`) or
   with `/guild create <name>`.
-* Commands: `/guild invite|join|leave|kick|promote|demote|motd|rank|members|disband`.
+* Commands: `/guild invite|join|leave|kick|promote|demote|motd|rank|shield|turns|members|disband`.
   `/guild rank <1-4> <title> [permission bits]` renames a rank and sets
   its permissions.
+* **Shield colour:** `/guild shield <colour>` (the rank permission) picks
+  the guild's colour from a 16-colour pastel set of the xterm 256 palette:
+  rose, salmon, coral, orange, peach, gold, lemon, khaki, lime, mint, sage,
+  lavender, violet, orchid, pink, tan. The party's light blue and the plain
+  faint white are not offered. A new guild gets one of them by its id until
+  it chooses.
+* **Battle turns for guild runs:** `/guild turns on|off`, as for parties
+  (2.5), for guild-mates on a level who are not in a party.
+* **DB (schema 2):** `guild.shield`, `guild.turn_based`.
 
 ### 2.9 Personal banks
 
@@ -263,7 +324,8 @@ steps, and what stays compatible.
 * **Moderator:** `/who`, `/kick`, `/mute name minutes`, `/goto name`.
 * **Admin:** `/ban name days reason`, `/unban`, `/role name n`,
   `/broadcast text`, `/summon name`, `/inspect name`, `/save`,
-  `/shutdown minutes`, `/resetlevel depth`, Umoria's wizard mode (`^W`).
+  `/shutdown minutes`, `/resetlevel depth`, `/spawnboss` (an event: a boss,
+  awake, beside the admin), Umoria's wizard mode (`^W`).
 * **DB:** `audit(id, at, actor, action, target, detail)`.
 * **CLI:** `mumoria-server --create-admin NAME` sets up the first admin.
 
@@ -282,6 +344,27 @@ steps, and what stays compatible.
 * **Files:** `src/mumoria/boss.cpp`, plus the hooks in `monster.cpp`
   (`monsterTakeHit`) and `world.cpp` (level creation).
 * **DB:** `level.boss_dead_at`, `character.boss_kills`.
+* In a party or guild run, the boss's drops are rolled for like any other
+  loot (2.5).
+
+### 2.17 Player against player
+
+* **Optional, per character:** it is asked at character creation ("Allow
+  other players to fight this character (PvP)?") and kept in
+  `character.pvp`. `/pvp on|off` changes it, at most once a day
+  (`character.pvp_changed_at`). The creation choice does not count against
+  that.
+* **Engaged on purpose only:** `"` and a direction attacks the player there.
+  Walking into a player never attacks.
+* **Who can fight:** both must have PvP on, they must not be in the same
+  party, and never in the town.
+* **The blow:** one round of Umoria's own melee (blows, to-hit against the
+  target's AC, weapon dice, criticals, plus to-dam), from
+  `player.cpp` `muPlayerMeleeDamage`.
+* **The damage** lands on the target's next turn, through Umoria's
+  `playerTakesHit`, so a death is a normal Umoria death ("Killed by Rooty").
+  A target who hangs up still takes it, and dies if it is lethal.
+* Every attack is written to `audit`.
 
 ## 3. Menus: drawn the way Umoria draws
 
@@ -291,9 +374,36 @@ lines `a)`, `b)`..., the prompt on the message line, `ESC` to leave, and then
 `drawCavePanel()`. The inventory, spells and character sheet are Umoria's own
 overlays, untouched. The town gets three more buildings, `7` Bank, `8` Guild
 Hall and `9` Auction House, as store doors with sub-categories 107 to 109.
-They stand in the free margins left and right of the six stores. A shop's
-doorway can hold more than one player, because whoever is inside a shop is
-standing on its door.
+They stand in the free margins left and right of the six stores.
+
+**Inside a building**, a player is not drawn and blocks nobody. In the town, a
+building's doorway can always be walked through and entered, however many
+players are on it.
+
+### Colours
+
+The server sends xterm 256-colour ANSI. `vterm.c` keeps a look for each
+cell; `colour.cpp` decides it.
+
+* **Your own `@`:** bold, in your class's bright colour, with no shield.
+* **Every other player's `@`:** bold, in their class's dark colour, standing
+  on a **shield** (the square's background):
+  * light blue (117) while they are in a party
+  * otherwise their guild's colour
+  * otherwise a faint white (252)
+* **Class colours** follow the python port's hues:
+
+  | Class | Hue | Bright (yours) | Dark (others) |
+  | --- | --- | --- | --- |
+  | Warrior | red | 196 | 124 |
+  | Mage | blue | 33 | 19 |
+  | Priest | gold | 214 | 94 |
+  | Rogue | purple | 135 | 54 |
+  | Ranger | green | 46 | 22 |
+  | Paladin | teal | 44 | 23 |
+
+* After any party or guild change, every map is redrawn, so the shields
+  follow at once.
 
 ## 4. Building and running
 
@@ -303,8 +413,8 @@ standing on its door.
     telnet localhost 4000
 
 Settings are in `mumoria.conf` (key = value). `mumoria.conf.example` lists
-them: `port`, `db`, `guild_cost`, `irc_host`, `irc_port`, `irc_channel`,
-`irc_nick`, `aol_token_secret`.
+them: `port`, `db`, `guild_cost`, `party_gold_per_level`, `irc_host`,
+`irc_port`, `irc_channel`, `irc_nick`, `aol_token_secret`.
 
 The build needs only the SQLite runtime library (`libsqlite3.so.0`), not its
 development header (`src/mumoria/sqlite3_min.h`). Without the ncurses
@@ -332,17 +442,30 @@ of the following against the built server:
 * a boss announced on 100 ft
 * a 6-player stress run in the town and on 50 ft (moves, rests, chat, a
   drop and reconnect), with clean saving at shutdown
+* colours: your own `@`, others on the plain shield, the party's light blue,
+  a guild's default colour and then its chosen one; a bad colour name is
+  refused
+* a player inside the Bank is not drawn for others, and another walks onto
+  the same doorway and in
+* a party kill of a boss: the boss counted, items rolled for (each roll
+  shown, the winner's pack filled), and gold split between the members
+* other players' lamps lighting their squares on your map
+* PvP:
+  * refused in the town
+  * bumping only blocks
+  * `"` and a direction hits (the target 21 -> 13 HP, told who struck them)
+  * `/pvp` changes, then is refused for 24 hours
+* battle turns: off, a player acts freely; on, a member's second action waits
+  until the other member has acted, then runs
 
 ## 6. Not done yet
 
-* **Boss kill and loot** is written (`boss.cpp`), but no test has killed a
-  boss yet.
 * The **IRC bridge** has not been run against a live IRC server.
-* **PvP** is off. The python port's public-dungeon PvP can follow later.
-* **Party gold** is not shared. The finder keeps it.
-* No **colour client**. Umoria has no colours.
 * **The AOL launch itself:** the token login is built. The P3OL side, a
   terminal relay to this server, is not.
+* While waiting for others in a battle round, the chat line (`'`) cannot be
+  opened; the wait is at most `MU_ROUND_TIMEOUT`.
+* The extra monster spawns for several teams were not measured by a test.
 * Umoria's look command keeps a little state in statics
   (`dungeon_los.cpp`), and so does its haggling (`store.cpp`). Two players
   doing those at the same moment can disturb each other's display, but not

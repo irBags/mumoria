@@ -1445,6 +1445,41 @@ bool playerTunnelWall(Coord_t coord, int digging_ability, int digging_chance) {
 }
 
 // let the player attack the creature
+#ifdef MUMORIA
+// playerAttackMonster()'s blows, against a player's armour class; no slays,
+// no confusing touch (those are for monsters).
+int muPlayerMeleeDamage(int target_ac, const char *target_name) {
+    Inventory_t &item = py.inventory[PlayerEquipment::Wield];
+    int blows, total_to_hit;
+    playerCalculateToHitBlows(item.category_id, item.weight, blows, total_to_hit);
+    int base_to_hit = playerCalculateBaseToHit(true, total_to_hit);
+
+    int total = 0;
+    vtype_t msg = {'\0'};
+    for (int i = blows; i > 0; i--) {
+        if (!playerTestBeingHit(base_to_hit, (int) py.misc.level, total_to_hit, target_ac, PlayerClassLevelAdj::BTH)) {
+            (void) snprintf(msg, MORIA_MESSAGE_SIZE, "You miss %s.", target_name);
+            printMessage(msg);
+            continue;
+        }
+        (void) snprintf(msg, MORIA_MESSAGE_SIZE, "You hit %s.", target_name);
+        printMessage(msg);
+
+        int damage;
+        if (item.category_id != TV_NOTHING) {
+            damage = diceRoll(item.damage);
+            damage = playerWeaponCriticalBlow((int) item.weight, total_to_hit, damage, PlayerClassLevelAdj::BTH);
+        } else {
+            damage = diceRoll(Dice_t{1, 1});
+            damage = playerWeaponCriticalBlow(1, 0, damage, PlayerClassLevelAdj::BTH);
+        }
+        damage += py.misc.plusses_to_damage;
+        total += damage > 0 ? damage : 0;
+    }
+    return total;
+}
+#endif
+
 void playerAttackPosition(Coord_t coord) {
     // Is a Coward?
     if (py.flags.afraid > 0) {

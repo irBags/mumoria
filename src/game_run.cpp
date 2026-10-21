@@ -1056,9 +1056,9 @@ static void executeInputCommands(char &command, int &find_count) {
                 MuTopPrompt top;
                 last_input_command = getKeyInput();
             }
-            // Mumoria's own keys, before Umoria maps unknown keys away
+            // Mumoria's own keys, before Umoria maps unknown keys away; the
+            // command says whether it took a turn (game.player_free_turn)
             if (muCommand(last_input_command)) {
-                game.player_free_turn = true;
                 continue;
             }
 #else
@@ -2346,7 +2346,12 @@ static void playDungeon() {
         }
 
         // Check for creature generation
+#ifdef MUMORIA
+        // more arrive when several players or parties share a level
+        if (randomNumber(muNewMonsterChance()) == 1) {
+#else
         if (randomNumber(config::monsters::MON_CHANCE_OF_NEW) == 1) {
+#endif
             monsterPlaceNewWithinDistance(1, config::monsters::MON_MAX_SIGHT, false);
         }
 

@@ -1375,9 +1375,12 @@ int monsterTakeHit(int monster_id, int damage) {
         return -1;
     }
 
+#ifdef MUMORIA
+    int treasure_before = game.treasure.current_id;
+#endif
     uint32_t treasure_flags = monsterDeath(Coord_t{monster.pos.y, monster.pos.x}, creature.movement);
 #ifdef MUMORIA
-    muMonsterDies(monster_id);
+    muMonsterDies(monster_id, treasure_before);
 #endif
 
     Recall_t &memory = creature_recall[monster.creature_id];
