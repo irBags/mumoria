@@ -257,17 +257,47 @@ void mu_vt_raw(MuScreen *s, const char *bytes, int len) {
     wake(s);
 }
 
-void mu_vt_chat(MuScreen *s, const char *line) {
-    pthread_mutex_lock(&s->lock);
+static void chat_row(MuScreen *s, const char *text, int len) {
     for (int i = 0; i < MU_CHAT_ROWS - 1; i++) {
         memcpy(s->chat[i], s->chat[i + 1], sizeof(s->chat[i]));
     }
-    snprintf(s->chat[MU_CHAT_ROWS - 1], sizeof(s->chat[0]), "%s", line);
-    for (char *p = s->chat[MU_CHAT_ROWS - 1]; *p != '\0'; p++) {
+    char *row = s->chat[MU_CHAT_ROWS - 1];
+    memcpy(row, text, (size_t) len);
+    row[len] = '\0';
+    for (char *p = row; *p != '\0'; p++) {
         if ((unsigned char) *p < 32 || (unsigned char) *p > 126) {
             *p = ' ';
         }
     }
+}
+
+// Long lines wrap at a space onto further rows, indented by two.
+void mu_vt_chat(MuScreen *s, const char *line) {
+    pthread_mutex_lock(&s->lock);
+    const char *p = line;
+    int indent = 0;
+    do {
+        int room = MU_COLS - indent;
+        int len = (int) strlen(p);
+        if (len > room) {
+            len = room;
+            while (len > room / 2 && p[len] != ' ') {
+                len--; // break at the last space, unless it is far back
+            }
+            if (p[len] != ' ') {
+                len = room;
+            }
+        }
+        char buf[MU_COLS + 1];
+        memset(buf, ' ', (size_t) indent);
+        memcpy(buf + indent, p, (size_t) len);
+        chat_row(s, buf, indent + len);
+        p += len;
+        while (*p == ' ') {
+            p++;
+        }
+        indent = 2;
+    } while (*p != '\0');
     s->chat_dirty = 1;
     flush_locked(s);
     pthread_mutex_unlock(&s->lock);

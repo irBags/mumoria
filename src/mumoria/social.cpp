@@ -1143,14 +1143,42 @@ static bool moderate(MuSession *s, const std::string &cmd, const std::vector<std
     return true;
 }
 
+// A full page, as Umoria's own '?' help is; any key goes back to the map.
 static void help(MuSession *s) {
-    say(s, "' then text: say to your level. /w world, /g guild, /p party, /t name msg, /r reply");
-    say(s, "/who  /invite /accept /decline /leave /party /pkick  /trade name  /guild ...  /pvp");
-    say(s, "\" then a direction: attack a player (both need PvP on; not in the town).");
-    say(s, "Town: 7 Bank, 8 Guild Hall, 9 Auction House.");
+    std::vector<std::string> lines = {
+        "Mumoria commands",
+        "",
+        "  '  then text        talk to everyone on your level",
+        "  '  then /w text     world chat (also heard in the AOL chat room)",
+        "  '  then /g text     guild chat         /p text   party chat",
+        "  '  then /t name msg private message    /r msg    reply",
+        "  \"  then a direction attack a player (both need PvP on; never in town)",
+        "",
+        "  /who                who is in the game",
+        "  /invite name        invite to your party;  /accept  /decline",
+        "  /leave  /party      leave, or list your party;  /pkick name",
+        "  /party turns on|off battle turns for your party (leader)",
+        "  /trade name         trade with a player on your level",
+        "  /pvp [on|off]       player fighting; changed once a day",
+        "  /guild ...          create join leave invite kick promote demote",
+        "                      motd rank shield turns members disband",
+        "",
+        "  Town buildings: 7 Bank, 8 Guild Hall, 9 Auction House",
+    };
     if (s->account.role >= 1) {
-        say(s, "Mod: /kick /mute /goto /inspect" + std::string(s->account.role >= 2 ? "  Admin: /ban /unban /role /broadcast /summon /spawnboss /save /shutdown /resetlevel" : ""));
+        lines.push_back("  Moderator: /kick /mute /goto /inspect");
     }
+    if (s->account.role >= 2) {
+        lines.push_back("  Admin: /ban /unban /role /broadcast /summon /spawnboss");
+        lines.push_back("         /save /shutdown /resetlevel, wizard mode ^W");
+    }
+    MuSafePrompt safe;
+    clearScreen();
+    for (size_t i = 0; i < lines.size() && i < 22; i++) {
+        putString(lines[i].c_str(), Coord_t{(int) i, 0});
+    }
+    waitForContinueKey(23);
+    drawCavePanel();
 }
 
 void mu_social_command(MuSession *s, const std::string &line) {

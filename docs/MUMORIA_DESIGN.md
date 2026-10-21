@@ -274,7 +274,9 @@ steps, and what stays compatible.
 * **UI:** rows 24-29, below Umoria's own 24-line screen, are the chat pane, so
   no Umoria line moves. `'` opens the chat line on the message line. Plain
   text goes to the level ("say"). `/w` world, `/g` guild, `/p` party,
-  `/t name` private, `/r` reply.
+  `/t name` private, `/r` reply. A line longer than the screen wraps onto
+  further rows, indented by two. `/help` is a full page, like Umoria's `?`;
+  any key goes back to the map.
 * **AOL:** `irc.c` joins a configured IRC channel (the P3OL rooms are IRC, on
   the Ergo server) and relays world chat both ways. AOL members in that chat
   room talk with the players in the game.

@@ -113,19 +113,26 @@ int mu_db_open(const char *path) {
     if (exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON;") != 0) {
         return -1;
     }
+    // Migrate holding the write lock, reading the version only once it is
+    // held: two processes opening a new file (the server and --create-admin)
+    // must not both apply the same step.
+    if (exec("BEGIN IMMEDIATE") != 0) {
+        return -1;
+    }
     int version = (int) mu_db_int("PRAGMA user_version", 0, "");
+    int rc = 0;
     if (version < 1) {
-        if (exec("BEGIN") != 0 || exec(SCHEMA_V1) != 0 || exec("PRAGMA user_version = 1") != 0 || exec("COMMIT") != 0) {
-            return -1;
-        }
+        rc = exec(SCHEMA_V1) != 0 || exec("PRAGMA user_version = 1") != 0;
     }
-    if (version < 2) {
-        // guild shield colours; PvP chosen per character, changed once a day
-        if (exec("BEGIN") != 0 || exec(SCHEMA_V2) != 0 || exec("PRAGMA user_version = 2") != 0 || exec("COMMIT") != 0) {
-            return -1;
-        }
+    if (rc == 0 && version < 2) {
+        // guild shields and battle turns; PvP per character, changed once a day
+        rc = exec(SCHEMA_V2) != 0 || exec("PRAGMA user_version = 2") != 0;
     }
-    return 0;
+    if (rc != 0) {
+        exec("ROLLBACK");
+        return -1;
+    }
+    return exec("COMMIT");
 }
 
 void mu_db_close(void) {
