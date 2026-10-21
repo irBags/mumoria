@@ -260,6 +260,9 @@ static char mapRoguelikeKeysToKeypad(char command) {
 // Prompts for a direction -RAK-
 // Direction memory added, for repeated commands.  -CJS
 bool getDirectionWithMemory(char *prompt, int &direction) {
+#ifdef MUMORIA
+    MuSafePrompt safe;
+#endif
     // used in counted commands. -CJS-
     if (game.use_last_direction) {
         direction = py.prev_dir;
@@ -298,6 +301,9 @@ bool getDirectionWithMemory(char *prompt, int &direction) {
 // Similar to getDirectionWithMemory(), except that no memory exists,
 // and it is allowed to enter the null direction. -CJS-
 bool getAllDirections(const char *prompt, int &direction) {
+#ifdef MUMORIA
+    MuSafePrompt safe;
+#endif
     char command;
 
     while (true) {
@@ -321,6 +327,9 @@ bool getAllDirections(const char *prompt, int &direction) {
 
 // Restore the terminal and exit
 void exitProgram() {
+#ifdef MUMORIA
+    muExitProgram("exit");
+#endif
     flushInputBuffer();
     terminalRestore();
     exit(0);
@@ -328,6 +337,9 @@ void exitProgram() {
 
 // Abort the program with a message displayed on the terminal.
 void abortProgram(const char *msg) {
+#ifdef MUMORIA
+    muExitProgram(msg);
+#endif
     flushInputBuffer();
     terminalRestore();
 

@@ -115,6 +115,18 @@ static bool find_openarea, find_breakright, find_breakleft;
 static int find_prevdir;
 static int find_direction; // Keep a record of which way we are going.
 
+#ifdef MUMORIA
+void muRunStateGet(int &prevdir, int &direction) {
+    prevdir = find_prevdir;
+    direction = find_direction;
+}
+
+void muRunStateSet(int prevdir, int direction) {
+    find_prevdir = prevdir;
+    find_direction = direction;
+}
+#endif
+
 // Do we see a wall? Used in running. -CJS-
 static bool playerCanSeeDungeonWall(int dir, Coord_t coord) {
     // check to see if movement there possible

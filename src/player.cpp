@@ -114,7 +114,11 @@ void playerTeleport(int new_distance) {
             location.y += (py.pos.y - location.y) / 2;
             location.x += (py.pos.x - location.x) / 2;
         }
-    } while (dg.floor[location.y][location.x].feature_id >= MIN_CLOSED_SPACE || dg.floor[location.y][location.x].creature_id >= 2);
+    } while (dg.floor[location.y][location.x].feature_id >= MIN_CLOSED_SPACE || dg.floor[location.y][location.x].creature_id >= 2
+#ifdef MUMORIA
+             || muOtherPlayerAt(location)
+#endif
+    );
 
     dungeonMoveCreatureRecord(py.pos, location);
 

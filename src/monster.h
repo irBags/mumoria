@@ -19,6 +19,9 @@ typedef struct {
     bool lit;
     uint8_t stunned_amount;
     uint8_t confused_amount;
+#ifdef MUMORIA
+    uint8_t mu_boss; // a Mumoria boss (not in save files)
+#endif
 } Monster_t;
 
 // Creature_t is a base data object.

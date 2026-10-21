@@ -1,0 +1,19 @@
+# Mumoria server settings. Copy to mumoria.conf (next to mumoria-server).
+# Command-line --port and --db win over these.
+
+port = 4000
+db = mumoria.db
+
+# Gold to found a guild.
+guild_cost = 1000
+
+# Mirror world chat to an IRC channel: the P3OL/AOL chat rooms are IRC, so
+# members in that room talk with the players. Leave irc_host empty for none.
+irc_host =
+irc_port = 6667
+irc_channel = #mumoria
+irc_nick = Mumoria
+
+# Shared with the P3OL server: it signs "name:expiry" so an AOL member logs
+# in as their screen name without a password (type token:<token> at login).
+aol_token_secret =

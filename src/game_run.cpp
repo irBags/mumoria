@@ -1051,7 +1051,19 @@ static void executeInputCommands(char &command, int &find_count) {
         if (game.command_count > 0) {
             game.use_last_direction = true;
         } else {
+#ifdef MUMORIA
+            {
+                MuTopPrompt top;
+                last_input_command = getKeyInput();
+            }
+            // Mumoria's own keys, before Umoria maps unknown keys away
+            if (muCommand(last_input_command)) {
+                game.player_free_turn = true;
+                continue;
+            }
+#else
             last_input_command = getKeyInput();
+#endif
 
             // Get a count for a command.
             int repeat_count = 0;
@@ -1444,6 +1456,12 @@ static void commandPreviousMessage() {
 }
 
 static void commandFlipWizardMode() {
+#ifdef MUMORIA
+    if (!muWizardAllowed()) {
+        printMessage("Wizard mode is for the game's admins.");
+        return;
+    }
+#endif
     if (game.wizard_mode) {
         game.wizard_mode = false;
         printMessage("Wizard mode off.");
@@ -2421,5 +2439,67 @@ static void playDungeon() {
         if (!dg.generate_new_level) {
             updateMonsters(true);
         }
+#ifdef MUMORIA
+        muTurnDone();
+#endif
     } while (!dg.generate_new_level && (eof_flag == 0));
 }
+
+#ifdef MUMORIA
+// The server's way into the engine: startMoria() split in three, because the
+// world (not this player) owns the seeds, the stores and the levels.
+void muEngineInit(uint32_t seed) {
+    priceAdjust();
+    seedsInitialize(seed);
+    initializeMonsterLevels();
+    initializeTreasureLevels();
+    storeInitializeOwners();
+}
+
+// startMoria()'s "Create character" branch.
+void muEngineNewCharacter() {
+    playerInitializeBaseExperienceLevels();
+    py.flags.spells_learnt = 0;
+    py.flags.spells_worked = 0;
+    py.flags.spells_forgotten = 0;
+
+    characterCreate();
+
+    py.misc.date_of_birth = getCurrentUnixTime();
+
+    initializeCharacterInventory();
+    py.flags.food = 7500;
+    py.flags.food_digested = 2;
+
+    if (classes[py.misc.class_id].class_to_use_mage_spells == config::spells::SPELL_TYPE_MAGE) {
+        clearScreen();
+        playerCalculateAllowedSpellsCount(PlayerAttr::A_INT);
+        playerGainMana(PlayerAttr::A_INT);
+    } else if (classes[py.misc.class_id].class_to_use_mage_spells == config::spells::SPELL_TYPE_PRIEST) {
+        playerCalculateAllowedSpellsCount(PlayerAttr::A_WIS);
+        clearScreen();
+        playerGainMana(PlayerAttr::A_WIS);
+    }
+
+    py.temporary_light_only = false;
+    py.weapon_is_heavy = false;
+    py.pack.heaviness = 0;
+    game.character_generated = true;
+}
+
+// startMoria()'s main loop; the level change goes through the world.
+void muEnginePlay() {
+    clearScreen();
+    putString("Press ? for help", Coord_t{0, 63});
+    printCharacterStatsBlock();
+
+    while (!game.character_is_dead) {
+        playDungeon();
+        if (!game.character_is_dead) {
+            muNewLevel();
+        }
+    }
+
+    endGame();
+}
+#endif

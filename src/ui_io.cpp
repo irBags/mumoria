@@ -7,16 +7,44 @@
 
 #include <cstdlib>
 #include "headers.h"
+#ifdef MUMORIA
+#include "mumoria/mu_curses.h"
+#else
 #include "curses.h"
 
 static bool curses_on = false;
 
 // Spare window for saving the screen. -CJS-
 static WINDOW *save_screen;
+#endif
 
 int eof_flag = 0;        // Is used to signal EOF/HANGUP condition
 bool panic_save = false; // True if playing from a panic save
 
+#ifdef MUMORIA
+// Each session's screen is set up by the server (vterm.c).
+bool terminalInitialize() {
+    return true;
+}
+
+void terminalRestore() {}
+
+void terminalSaveScreen() {
+    mu_vt_save(mu_vt_current);
+}
+
+void terminalRestoreScreen() {
+    mu_vt_restore(mu_vt_current);
+}
+
+ssize_t terminalBellSound() {
+    putQIO();
+    if (config::options::error_beep_sound) {
+        muBell();
+    }
+    return 0;
+}
+#else
 // Set up the terminal into a suitable state -MRC-
 static void moriaTerminalInitialize() {
     // cbreak();           // <curses.h> use raw() instead as it disables Ctrl chars
@@ -98,6 +126,7 @@ ssize_t terminalBellSound() {
 
     return 0;
 }
+#endif
 
 // Dump the IO buffer to terminal -RAK-
 void putQIO() {
@@ -332,6 +361,10 @@ char getKeyInput() {
     putQIO();               // Dump IO buffer
     game.command_count = 0; // Just to be safe -CJS-
 
+#ifdef MUMORIA
+    // the server never sees ^R: the session's screen is redrawn instead
+    return (char) muGetKey();
+#else
     while (true) {
         int ch = getch();
 
@@ -371,6 +404,7 @@ char getKeyInput() {
         (void) wrefresh(curscr);
         moriaTerminalInitialize();
     }
+#endif
 }
 
 // Prompts (optional) and returns ord value of input char
@@ -521,7 +555,10 @@ void waitForContinueKey(int line_number) {
 // a certain point, sleep for a second. There would need to be a way of resetting
 // the count, with a call made for commands like run or rest.
 bool checkForNonBlockingKeyPress(int microseconds) {
-#ifdef _WIN32
+#ifdef MUMORIA
+    (void) microseconds;
+    return muPollKey();
+#elif defined(_WIN32)
     (void) microseconds;
 
     // Ugly non-blocking read...Ugh! -MRC-

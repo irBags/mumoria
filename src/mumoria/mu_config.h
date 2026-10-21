@@ -1,0 +1,28 @@
+// Mumoria - server settings that are not in mumoria.conf.
+
+#pragma once
+
+#define MU_DEFAULT_PORT 4000
+#define MU_MAX_CHARACTERS 5
+
+#define MU_AUTOSAVE_SECONDS 120
+#define MU_IDLE_SECONDS (30 * 60)
+#define MU_BUSY_TIMEOUT_MS 5000 // longest a player stopped mid-action holds their level
+
+#define MU_LEVEL_SAVE_SECONDS 60
+#define MU_LEVEL_UNLOAD_SECONDS 600
+#define MU_LEVEL_RESET_HOURS 6
+
+#define MU_PARTY_MAX 5
+#define MU_CHAT_MAX_LEN 200
+#define MU_CHAT_BURST 5 // lines per 5 seconds
+
+#define MU_BANK_SLOTS 50
+#define MU_GUILD_VAULT_SLOTS 100
+#define MU_AH_CUT_PERCENT 5
+#define MU_AH_MAX_PER_SELLER 10
+#define MU_TRADE_SLOTS 8
+
+#define MU_BOSS_INTERVAL 2
+#define MU_BOSS_RESPAWN_HOURS 2
+#define MU_BOSS_TIER_CAP 10

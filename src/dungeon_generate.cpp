@@ -1221,6 +1221,9 @@ static void townGeneration() {
     seedSet(game.town_seed);
 
     dungeonPlaceTownStores();
+#ifdef MUMORIA
+    muPlaceTownBuildings();
+#endif
 
     dungeonFillEmptyTilesWith(TILE_DARK_FLOOR);
 

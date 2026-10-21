@@ -134,6 +134,11 @@ void endGame() {
         printTomb();
     }
 
+#ifdef MUMORIA
+    // the server keeps the graveyard and the scores (session.cpp)
+    muEndGame();
+#endif
+
     // Save the memory at least.
     if (game.character_generated && !game.character_saved) {
         (void) saveGame();

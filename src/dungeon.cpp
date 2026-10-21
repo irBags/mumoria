@@ -179,6 +179,13 @@ char caveGetTileSymbol(Coord_t const &coord) {
         return ' ';
     }
 
+#ifdef MUMORIA
+    // another player, seen where there is light (as a monster would be)
+    if ((tile.permanent_light || tile.temporary_light) && muOtherPlayerAt(coord)) {
+        return '@';
+    }
+#endif
+
     if (py.flags.image > 0 && randomNumber(12) == 1) {
         return (uint8_t) (randomNumber(95) + 31);
     }

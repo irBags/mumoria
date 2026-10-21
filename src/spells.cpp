@@ -107,6 +107,9 @@ static bool spellGetId(int *spell_ids, int number_of_choices, int &spell_id, int
 // returns  0 if don't choose a spell, i.e. exit with an escape
 // TODO: split into two functions; getting spell ID and casting an actual spell
 int castSpellGetId(const char *prompt, int item_id, int &spell_id, int &spell_chance) {
+#ifdef MUMORIA
+    MuSafePrompt safe;
+#endif
     // NOTE: `flags` gets set again, since getAndClearFirstBit modified it
     uint32_t flags = py.inventory[item_id].flags;
     int first_spell = getAndClearFirstBit(flags);

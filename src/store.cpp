@@ -1102,6 +1102,18 @@ void storeEnter(int store_id) {
         return;
     }
 
+#ifdef MUMORIA
+    // one customer at a time: another's purchase would move the item letters
+    if (!muStoreEnter(store_id)) {
+        return;
+    }
+    struct Leave {
+        int id;
+        ~Leave() { muStoreLeave(id); }
+    } leave{store_id};
+    MuSafePrompt safe;
+#endif
+
     int current_top_item_id = 0;
     displayStore(stores[store_id], store_owners[store.owner_id].name, current_top_item_id);
 

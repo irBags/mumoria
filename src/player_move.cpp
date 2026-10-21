@@ -239,6 +239,11 @@ enum class TrapTypes {
     Temple,
     Alchemist,
     MagicShop,
+#ifdef MUMORIA
+    Bank,         // 107: Mumoria's town buildings 7, 8, 9
+    GuildHall,
+    AuctionHouse,
+#endif
 };
 
 // Player hit a trap.  (Chuckle) -RAK-
@@ -328,6 +333,13 @@ static void playerStepsOnTrap(Coord_t coord) {
         case TrapTypes::MagicShop:
             storeEnter(5);
             break;
+#ifdef MUMORIA
+        case TrapTypes::Bank:
+        case TrapTypes::GuildHall:
+        case TrapTypes::AuctionHouse:
+            muEnterBuilding((int) item.sub_category_id);
+            break;
+#endif
 
         default:
             // All cases are handled, so this should never be reached!
@@ -438,6 +450,21 @@ void playerMove(int direction, bool do_pickup) {
 
     Tile_t const &tile = dg.floor[coord.y][coord.x];
     Monster_t const &monster = monsters[tile.creature_id];
+
+#ifdef MUMORIA
+    // players block each other; bumping costs no turn. A shop's doorway is
+    // shared: whoever is inside a shop is standing on its door.
+    bool doorway = tile.treasure_id != 0 && game.treasure.list[tile.treasure_id].category_id == TV_STORE_DOOR;
+    if (tile.creature_id < 2 && !doorway) {
+        const char *other = muOtherPlayerNameAt(coord);
+        if (other != nullptr) {
+            playerEndRunning();
+            printMessage((std::string(other) + " is in your way.").c_str());
+            game.player_free_turn = true;
+            return;
+        }
+    }
+#endif
 
     // if there is no creature, or an unlit creature in the walls then...
     // disallow attacks against unlit creatures in walls because moving into

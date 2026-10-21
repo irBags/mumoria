@@ -6,7 +6,7 @@ if (${CMAKE_SOURCE_DIR} STREQUAL "${PROJECT_SOURCE_DIR}/src")
 endif ()
 
 project(umoria
-    LANGUAGES CXX
+    LANGUAGES C CXX
 )
 
 #
@@ -233,8 +233,8 @@ endforeach ()
 # All of the game resource files
 set(resources ${data_files} ${support_files})
 
-# Also add resources to the target so they are visible in the IDE
-add_executable(umoria ${source_files} ${resources})
+# Mumoria builds without curses; umoria is built when curses is found.
+option(BUILD_UMORIA "Build the single-player umoria game" ON)
 
 
 #
@@ -263,8 +263,54 @@ elseif ((MSYS OR MINGW) AND NOT "$ENV{MINGW}" STREQUAL "")
 else ()
     message(STATUS "NOTE: Configuring build for macOS/Linux release...")
     set(CURSES_NEED_NCURSES TRUE)
-    find_package(Curses REQUIRED)
+    find_package(Curses)
 endif ()
 
-include_directories(${CURSES_INCLUDE_DIR})
-target_link_libraries(umoria ${CURSES_LIBRARIES})
+if (BUILD_UMORIA AND (CURSES_FOUND OR MSYS OR MINGW))
+    # Also add resources to the target so they are visible in the IDE
+    add_executable(umoria ${source_files} ${resources})
+    target_include_directories(umoria PRIVATE ${CURSES_INCLUDE_DIR})
+    target_link_libraries(umoria ${CURSES_LIBRARIES})
+elseif (BUILD_UMORIA)
+    message(WARNING "ncurses development files not found: skipping the single-player umoria target")
+endif ()
+
+
+#
+# Mumoria: the multiplayer server (the same engine, built with MUMORIA) and
+# its terminal client. See docs/MUMORIA_DESIGN.md.
+#
+if (NOT WIN32)
+    set(CMAKE_C_STANDARD 11)
+    set(THREADS_PREFER_PTHREAD_FLAG ON)
+    find_package(Threads REQUIRED)
+    find_library(SQLITE3_LIBRARY NAMES sqlite3 libsqlite3.so.0)
+    if (NOT SQLITE3_LIBRARY)
+        message(FATAL_ERROR "SQLite library not found (libsqlite3)")
+    endif ()
+
+    set(mumoria_engine_files ${source_files})
+    list(REMOVE_ITEM mumoria_engine_files ${source_dir}/main.cpp ${source_dir}/curses.h)
+    list(REMOVE_DUPLICATES mumoria_engine_files)
+
+    set(
+            mumoria_files
+            ${source_dir}/mumoria/auth.c
+            ${source_dir}/mumoria/db.c
+            ${source_dir}/mumoria/irc.c
+            ${source_dir}/mumoria/net.c
+            ${source_dir}/mumoria/vterm.c
+            ${source_dir}/mumoria/boss.cpp
+            ${source_dir}/mumoria/screens.cpp
+            ${source_dir}/mumoria/server_main.cpp
+            ${source_dir}/mumoria/session.cpp
+            ${source_dir}/mumoria/social.cpp
+            ${source_dir}/mumoria/world.cpp
+    )
+
+    add_executable(mumoria-server ${mumoria_engine_files} ${mumoria_files})
+    target_compile_definitions(mumoria-server PRIVATE MUMORIA)
+    target_link_libraries(mumoria-server Threads::Threads ${SQLITE3_LIBRARY})
+
+    add_executable(mumoria-client client/mumoria_client.c)
+endif ()

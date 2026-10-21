@@ -71,3 +71,7 @@
 #include "store.h"
 #include "treasure.h"
 #include "wizard.h"
+
+#ifdef MUMORIA
+#include "mumoria/hooks.h"
+#endif

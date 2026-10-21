@@ -288,3 +288,10 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+
+# Mumoria server runtime files
+mumoria.db
+mumoria.db-wal
+mumoria.db-shm
+mumoria_tmp_*.sav
+mumoria.conf

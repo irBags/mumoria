@@ -1003,6 +1003,9 @@ static void uiCommandDisplayEquipment() {
 
 // This does all the work.
 void inventoryExecuteCommand(char command) {
+#ifdef MUMORIA
+    MuSafePrompt safe;
+#endif
     game.player_free_turn = true;
 
     terminalSaveScreen();

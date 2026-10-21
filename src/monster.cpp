@@ -558,6 +558,13 @@ static void glyphOfWardingProtection(uint16_t creature_id, uint32_t move_bits, b
 }
 
 static void monsterMovesOnPlayer(Monster_t const &monster, uint8_t creature_id, int monster_id, uint32_t move_bits, bool &do_move, bool &do_turn, uint32_t &rcmove, Coord_t coord) {
+#ifdef MUMORIA
+    // only the player whose turn it is can be struck; the others are in the way
+    if (creature_id == 0 && muOtherPlayerAt(coord)) {
+        do_move = false;
+        return;
+    }
+#endif
     if (creature_id == 1) {
         // if the monster is not lit, must call monsterUpdateVisibility, it
         // may be faster than character, and hence could have
@@ -1329,6 +1336,13 @@ void updateMonsters(bool attack) {
         if (attack) {
             int moves = monsterMovementRate(monster.speed);
 
+#ifdef MUMORIA
+            // a monster answers only the turns of the player nearest to it
+            if (muNearerPlayer(Coord_t{monster.pos.y, monster.pos.x}, monster.distance_from_player)) {
+                moves = 0;
+            }
+#endif
+
             if (moves <= 0) {
                 monsterUpdateVisibility(id);
             } else {
@@ -1362,6 +1376,9 @@ int monsterTakeHit(int monster_id, int damage) {
     }
 
     uint32_t treasure_flags = monsterDeath(Coord_t{monster.pos.y, monster.pos.x}, creature.movement);
+#ifdef MUMORIA
+    muMonsterDies(monster_id);
+#endif
 
     Recall_t &memory = creature_recall[monster.creature_id];
 
@@ -1379,7 +1396,11 @@ int monsterTakeHit(int monster_id, int damage) {
         }
     }
 
+#ifdef MUMORIA
+    muKillExperience(creature);
+#else
     playerGainKillExperience(creature);
+#endif
 
     // can't call displayCharacterExperience() here, as that would result in "new level"
     // message appearing before "monster dies" message.
