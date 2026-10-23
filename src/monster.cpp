@@ -437,6 +437,7 @@ static void monsterAttackPlayer(int monster_id) {
             }
 
             int damage = diceRoll(dice);
+            MU_ONLY(muFxMonsterBlow(monster.pos, py.pos, attack_desc, true, monster.lit);)
             notice = executeAttackOnPlayer(creature.level, monster.hp, monster_id, attack_type, damage, death_description, notice);
 
             // Moved here from monsterMove, so that monster only confused if it
@@ -458,6 +459,7 @@ static void monsterAttackPlayer(int monster_id) {
             }
         } else {
             if ((attack_desc >= 1 && attack_desc <= 3) || attack_desc == 6) {
+                MU_ONLY(muFxMonsterBlow(monster.pos, py.pos, attack_desc, false, monster.lit);)
                 playerDisturb(1, 0);
 
                 vtype_t description = {'\0'};
@@ -699,64 +701,89 @@ void monsterExecuteCastingOfSpell(Monster_t &monster, int monster_id, int spell_
     // Cast the spell.
     switch (spell_id) {
         case 5: // Teleport Short
+            MU_ONLY(muFxCast(monster.pos, MU_FX_MIND);)
             spellTeleportAwayMonster(monster_id, 5);
             break;
         case 6: // Teleport Long
+            MU_ONLY(muFxCast(monster.pos, MU_FX_MIND);)
             spellTeleportAwayMonster(monster_id, config::monsters::MON_MAX_SIGHT);
             break;
         case 7: // Teleport To
+            MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_MIND, MU_FX_AFFECT);)
             spellTeleportPlayerTo(Coord_t{monster.pos.y, monster.pos.x});
+            MU_ONLY(muFxCast(py.pos, MU_FX_MIND);)
             break;
         case 8: // Light Wound
             if (playerSavingThrow()) {
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_DRAIN, MU_FX_RESIST);)
                 printMessage("You resist the effects of the spell.");
             } else {
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_DRAIN, MU_FX_HIT);)
                 playerTakesHit(diceRoll(Dice_t{3, 8}), death_description);
             }
             break;
         case 9: // Serious Wound
             if (playerSavingThrow()) {
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_DRAIN, MU_FX_RESIST);)
                 printMessage("You resist the effects of the spell.");
             } else {
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_DRAIN, MU_FX_HIT);)
                 playerTakesHit(diceRoll(Dice_t{8, 8}), death_description);
             }
             break;
         case 10: // Hold Person
             if (py.flags.free_action) {
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_MIND, MU_FX_RESIST);)
                 printMessage("You are unaffected.");
             } else if (playerSavingThrow()) {
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_MIND, MU_FX_RESIST);)
                 printMessage("You resist the effects of the spell.");
-            } else if (py.flags.paralysis > 0) {
-                py.flags.paralysis += 2;
             } else {
-                py.flags.paralysis = (int16_t) (randomNumber(5) + 4);
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_MIND, MU_FX_AFFECT);)
+                if (py.flags.paralysis > 0) {
+                    py.flags.paralysis += 2;
+                } else {
+                    py.flags.paralysis = (int16_t) (randomNumber(5) + 4);
+                }
             }
             break;
         case 11: // Cause Blindness
             if (playerSavingThrow()) {
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_DARK, MU_FX_RESIST);)
                 printMessage("You resist the effects of the spell.");
-            } else if (py.flags.blind > 0) {
-                py.flags.blind += 6;
             } else {
-                py.flags.blind += 12 + randomNumber(3);
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_DARK, MU_FX_AFFECT);)
+                if (py.flags.blind > 0) {
+                    py.flags.blind += 6;
+                } else {
+                    py.flags.blind += 12 + randomNumber(3);
+                }
             }
             break;
         case 12: // Cause Confuse
             if (playerSavingThrow()) {
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_MIND, MU_FX_RESIST);)
                 printMessage("You resist the effects of the spell.");
-            } else if (py.flags.confused > 0) {
-                py.flags.confused += 2;
             } else {
-                py.flags.confused = (int16_t) (randomNumber(5) + 3);
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_MIND, MU_FX_AFFECT);)
+                if (py.flags.confused > 0) {
+                    py.flags.confused += 2;
+                } else {
+                    py.flags.confused = (int16_t) (randomNumber(5) + 3);
+                }
             }
             break;
         case 13: // Cause Fear
             if (playerSavingThrow()) {
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_MIND, MU_FX_RESIST);)
                 printMessage("You resist the effects of the spell.");
-            } else if (py.flags.afraid > 0) {
-                py.flags.afraid += 2;
             } else {
-                py.flags.afraid = (int16_t) (randomNumber(5) + 3);
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_MIND, MU_FX_AFFECT);)
+                if (py.flags.afraid > 0) {
+                    py.flags.afraid += 2;
+                } else {
+                    py.flags.afraid = (int16_t) (randomNumber(5) + 3);
+                }
             }
             break;
         case 14: // Summon Monster
@@ -769,6 +796,7 @@ void monsterExecuteCastingOfSpell(Monster_t &monster, int monster_id, int spell_
             hack_monptr = monster_id;
             (void) monsterSummon(coord, false);
             hack_monptr = -1;
+            MU_ONLY(muFxCast(coord, MU_FX_DRAIN);) // where it appears
             monsterUpdateVisibility((int) dg.floor[coord.y][coord.x].creature_id);
             break;
         case 15: // Summon Undead
@@ -781,22 +809,29 @@ void monsterExecuteCastingOfSpell(Monster_t &monster, int monster_id, int spell_
             hack_monptr = monster_id;
             (void) monsterSummonUndead(coord);
             hack_monptr = -1;
+            MU_ONLY(muFxCast(coord, MU_FX_DRAIN);) // where it appears
             monsterUpdateVisibility((int) dg.floor[coord.y][coord.x].creature_id);
             break;
         case 16: // Slow Person
             if (py.flags.free_action) {
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_MIND, MU_FX_RESIST);)
                 printMessage("You are unaffected.");
             } else if (playerSavingThrow()) {
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_MIND, MU_FX_RESIST);)
                 printMessage("You resist the effects of the spell.");
-            } else if (py.flags.slow > 0) {
-                py.flags.slow += 2;
             } else {
-                py.flags.slow = (int16_t) (randomNumber(5) + 3);
+                MU_ONLY(muFxBolt(monster.pos, py.pos, MU_FX_MIND, MU_FX_AFFECT);)
+                if (py.flags.slow > 0) {
+                    py.flags.slow += 2;
+                } else {
+                    py.flags.slow = (int16_t) (randomNumber(5) + 3);
+                }
             }
             break;
         case 17: // Drain Mana
             if (py.misc.current_mana > 0) {
                 playerDisturb(1, 0);
+                MU_ONLY(muFxBolt(py.pos, monster.pos, MU_FX_ARCANE, MU_FX_AFFECT);) // your mana flows to it
 
                 vtype_t msg = {'\0'};
                 (void) snprintf(msg, MORIA_MESSAGE_SIZE, "%sdraws psychic energy from you!", monster_name);
@@ -906,6 +941,7 @@ static bool monsterCastSpell(int monster_id) {
         printMessage(name);
     }
 
+    MU_ONLY(if (monster.lit) muFxCast(monster.pos, MU_FX_DRAIN);)
     monsterExecuteCastingOfSpell(monster, monster_id, thrown_spell, creature.level, name, death_description);
 
     if (monster.lit) {

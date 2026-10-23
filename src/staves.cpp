@@ -70,6 +70,7 @@ static bool staffPlayerCanUse(Inventory_t &item) {
 
     if (randomNumber(chance) < config::player::PLAYER_USE_DEVICE_DIFFICULTY) {
         printMessage("You failed to use the staff properly.");
+        MU_ONLY(muFxCast(py.pos, MU_FX_FIZZLE);)
         return false;
     }
 
@@ -219,6 +220,7 @@ void staffUse() {
         return;
     }
 
+    MU_ONLY(muFxCast(py.pos, MU_FX_ARCANE);)
     bool identified = staffDischarge(item);
 
     if (identified) {
@@ -423,6 +425,7 @@ void wandAim() {
 
     if (randomNumber(chance) < config::player::PLAYER_USE_DEVICE_DIFFICULTY) {
         printMessage("You failed to use the wand properly.");
+        MU_ONLY(muFxCast(py.pos, MU_FX_FIZZLE);)
         return;
     }
 
@@ -434,6 +437,7 @@ void wandAim() {
         return;
     }
 
+    MU_ONLY(muFxCast(py.pos, MU_FX_ARCANE);)
     bool identified = wandDischarge(item, direction);
 
     if (identified) {

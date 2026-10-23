@@ -224,6 +224,7 @@ void panelPutTile(char ch, Coord_t coord) {
 #ifdef MUMORIA
     // players: class colour, bold, on their shield (colour.cpp)
     mu_vt_set_attr(mu_vt_current, ch == '@' ? muTileAttr(coord) : 0);
+    muMapTile(true);
 #endif
     // Real coords convert to screen positions
     coord.y -= dg.panel.row_prt;
@@ -234,6 +235,7 @@ void panelPutTile(char ch, Coord_t coord) {
     }
 #ifdef MUMORIA
     mu_vt_set_attr(mu_vt_current, 0);
+    muMapTile(false);
 #endif
 }
 

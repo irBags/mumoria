@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 __thread MuScreen *mu_vt_current = NULL;
@@ -75,6 +76,7 @@ void mu_vt_addch(MuScreen *s, char ch) {
     if (s->cy < MU_GAME_ROWS && s->cx < MU_COLS) {
         s->cell[s->cy][s->cx] = (char) c;
         s->attr[s->cy][s->cx] = s->cur_attr;
+        s->mapcell[s->cy][s->cx] = s->map_drawing > 0;
     }
     if (s->cx < MU_COLS - 1) {
         s->cx++;
@@ -97,6 +99,7 @@ void mu_vt_clrtoeol(MuScreen *s) {
     pthread_mutex_lock(&s->lock);
     memset(&s->cell[s->cy][s->cx], ' ', (size_t) (MU_COLS - s->cx));
     memset(&s->attr[s->cy][s->cx], 0, sizeof(uint32_t) * (size_t) (MU_COLS - s->cx));
+    memset(&s->mapcell[s->cy][s->cx], s->map_drawing > 0, (size_t) (MU_COLS - s->cx));
     pthread_mutex_unlock(&s->lock);
 }
 
@@ -104,9 +107,11 @@ void mu_vt_clrtobot(MuScreen *s) {
     pthread_mutex_lock(&s->lock);
     memset(&s->cell[s->cy][s->cx], ' ', (size_t) (MU_COLS - s->cx));
     memset(&s->attr[s->cy][s->cx], 0, sizeof(uint32_t) * (size_t) (MU_COLS - s->cx));
+    memset(&s->mapcell[s->cy][s->cx], 0, (size_t) (MU_COLS - s->cx));
     for (int y = s->cy + 1; y < MU_GAME_ROWS; y++) {
         memset(s->cell[y], ' ', MU_COLS);
         memset(s->attr[y], 0, sizeof(s->attr[y]));
+        memset(s->mapcell[y], 0, MU_COLS);
     }
     pthread_mutex_unlock(&s->lock);
 }
@@ -117,6 +122,7 @@ void mu_vt_clear(MuScreen *s) {
         memset(s->cell[y], ' ', MU_COLS);
         memset(s->attr[y], 0, sizeof(s->attr[y]));
     }
+    memset(s->mapcell, 0, sizeof(s->mapcell));
     s->cy = s->cx = 0;
     pthread_mutex_unlock(&s->lock);
 }
@@ -125,6 +131,7 @@ void mu_vt_save(MuScreen *s) {
     pthread_mutex_lock(&s->lock);
     memcpy(s->saved, s->cell, sizeof(s->saved));
     memcpy(s->saved_attr, s->attr, sizeof(s->saved_attr));
+    memcpy(s->saved_mapcell, s->mapcell, sizeof(s->saved_mapcell));
     pthread_mutex_unlock(&s->lock);
 }
 
@@ -132,6 +139,7 @@ void mu_vt_restore(MuScreen *s) {
     pthread_mutex_lock(&s->lock);
     memcpy(s->cell, s->saved, sizeof(s->saved));
     memcpy(s->attr, s->saved_attr, sizeof(s->saved_attr));
+    memcpy(s->mapcell, s->saved_mapcell, sizeof(s->mapcell));
     pthread_mutex_unlock(&s->lock);
 }
 
@@ -154,8 +162,23 @@ static void put_chat_rows(MuScreen *s) {
     s->chat_dirty = 0;
 }
 
+// What a cell shows: an animation over the map, else what was drawn there.
+static char shown_ch(MuScreen *s, int y, int x) {
+    if (y < MU_GAME_ROWS && s->ov_ch[y][x] > MU_FX_TINT && s->mapcell[y][x]) {
+        return s->ov_ch[y][x];
+    }
+    return s->cell[y][x];
+}
+
+static uint32_t shown_attr(MuScreen *s, int y, int x) {
+    if (y < MU_GAME_ROWS && s->ov_ch[y][x] != 0 && s->mapcell[y][x]) {
+        return s->ov_attr[y][x];
+    }
+    return s->attr[y][x];
+}
+
 static int same(MuScreen *s, int y, int x) {
-    return s->cell[y][x] == s->sent[y][x] && s->attr[y][x] == s->sent_attr[y][x];
+    return shown_ch(s, y, x) == s->sent[y][x] && shown_attr(s, y, x) == s->sent_attr[y][x];
 }
 
 // SGR for a cell's look, sent only when it differs from the terminal's.
@@ -222,11 +245,13 @@ static void flush_locked(MuScreen *s) {
             int n = snprintf(buf, sizeof(buf), "\033[%d;%dH", y + 1, start + 1);
             out_append(s, buf, n);
             for (int i = start; i < end; i++) {
-                set_look(s, s->attr[y][i]);
-                out_append(s, &s->cell[y][i], 1);
+                char ch = shown_ch(s, y, i);
+                uint32_t look = shown_attr(s, y, i);
+                set_look(s, look);
+                out_append(s, &ch, 1);
+                s->sent[y][i] = ch;
+                s->sent_attr[y][i] = look;
             }
-            memcpy(&s->sent[y][start], &s->cell[y][start], (size_t) (end - start));
-            memcpy(&s->sent_attr[y][start], &s->attr[y][start], sizeof(uint32_t) * (size_t) (end - start));
             x = end;
         }
     }
@@ -302,6 +327,92 @@ void mu_vt_chat(MuScreen *s, const char *line) {
     flush_locked(s);
     pthread_mutex_unlock(&s->lock);
     wake(s);
+}
+
+// --- animations ----------------------------------------------------------------
+
+int64_t mu_vt_now_ms(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (int64_t) t.tv_sec * 1000 + t.tv_nsec / 1000000;
+}
+
+void mu_vt_map_drawing(MuScreen *s, int delta) {
+    s->map_drawing += delta; // only the engine's thread draws the map
+}
+
+void mu_vt_map_panel(MuScreen *s, int top, int bottom, int left, int right, int row_prt, int col_prt) {
+    pthread_mutex_lock(&s->lock);
+    if (!s->map_set || s->map_top != top || s->map_left != left || s->map_row_prt != row_prt || s->map_col_prt != col_prt) {
+        memset(s->ov_ch, 0, sizeof(s->ov_ch)); // drawn again at the next frame, in the new place
+    }
+    s->map_set = 1;
+    s->map_top = top;
+    s->map_bottom = bottom;
+    s->map_left = left;
+    s->map_right = right;
+    s->map_row_prt = row_prt;
+    s->map_col_prt = col_prt;
+    pthread_mutex_unlock(&s->lock);
+}
+
+void mu_vt_fx_add(MuScreen *s, const MuFxCell *cells, int n) {
+    if (n <= 0) {
+        return;
+    }
+    pthread_mutex_lock(&s->lock);
+    for (int i = 0; i < n && s->fx_n < MU_FX_MAX; i++) {
+        s->fx[s->fx_n++] = cells[i];
+    }
+    pthread_mutex_unlock(&s->lock);
+    wake(s);
+}
+
+void mu_vt_fx_clear(MuScreen *s) {
+    pthread_mutex_lock(&s->lock);
+    s->fx_n = 0;
+    memset(s->ov_ch, 0, sizeof(s->ov_ch));
+    s->map_set = 0;
+    pthread_mutex_unlock(&s->lock);
+}
+
+int mu_vt_fx_tick(MuScreen *s) {
+    static __thread char ch[MU_GAME_ROWS][MU_COLS];
+    static __thread uint32_t look[MU_GAME_ROWS][MU_COLS];
+
+    pthread_mutex_lock(&s->lock);
+    int64_t now = mu_vt_now_ms();
+    int64_t next = -1;
+    memset(ch, 0, sizeof(ch));
+    memset(look, 0, sizeof(look));
+    int kept = 0;
+    for (int i = 0; i < s->fx_n; i++) {
+        MuFxCell c = s->fx[i];
+        if (c.t1 <= now) {
+            continue;
+        }
+        s->fx[kept++] = c;
+        int64_t change = c.t0 > now ? c.t0 : c.t1;
+        if (next < 0 || change < next) {
+            next = change;
+        }
+        if (c.t0 > now || !s->map_set || c.y < s->map_top || c.y > s->map_bottom || c.x < s->map_left || c.x > s->map_right) {
+            continue;
+        }
+        int y = c.y - s->map_row_prt, x = c.x - s->map_col_prt;
+        if (y >= 1 && y < MU_GAME_ROWS && x >= 0 && x < MU_COLS) {
+            ch[y][x] = c.ch; // a later cell is drawn over an earlier one
+            look[y][x] = c.attr;
+        }
+    }
+    s->fx_n = kept;
+    if (memcmp(ch, s->ov_ch, sizeof(ch)) != 0 || memcmp(look, s->ov_attr, sizeof(look)) != 0) {
+        memcpy(s->ov_ch, ch, sizeof(ch));
+        memcpy(s->ov_attr, look, sizeof(look));
+        flush_locked(s);
+    }
+    pthread_mutex_unlock(&s->lock);
+    return next < 0 ? -1 : (int) (next - now);
 }
 
 int mu_vt_take_output(MuScreen *s, char *buf, int max) {

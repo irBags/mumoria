@@ -36,7 +36,7 @@ std::string muGoldFound(int32_t gold, const char *description);
 bool muCommand(char key);
 // One round of Umoria's melee against another player (player.cpp): says
 // each hit and miss, returns the damage done.
-int muPlayerMeleeDamage(int target_ac, const char *target_name);
+int muPlayerMeleeDamage(int target_ac, const char *target_name, Coord_t target);
 // The end of each game turn (others on the level are told to redraw).
 void muTurnDone();
 // Town buildings 7-9 (store door sub-categories 107-109).
@@ -52,6 +52,36 @@ void muFindSpot(Coord_t &coord);
 // Umoria's 1 in MON_CHANCE_OF_NEW, divided by the number of players and
 // parties exploring the level (never below 1 in 40). The town keeps its own.
 int muNewMonsterChance();
+
+// Animations (fx.cpp), shown to everyone on the level who can see them. One
+// player's animations play one after another.
+enum MuFxElement {
+    // the first seven are MagicSpellFlags
+    MU_FX_MISSILE, MU_FX_LIGHTNING, MU_FX_GAS, MU_FX_ACID, MU_FX_FROST, MU_FX_FIRE, MU_FX_HOLY,
+    MU_FX_MIND, MU_FX_DRAIN, MU_FX_MUD, MU_FX_LIGHT, MU_FX_ARCANE, MU_FX_HEAL, MU_FX_FIZZLE, MU_FX_PHYSICAL, MU_FX_DARK,
+};
+// How a ray ends at its last square. MU_FX_HIT becomes a kill when the square is empty after.
+enum MuFxEnd { MU_FX_NONE, MU_FX_HIT, MU_FX_KILL, MU_FX_AFFECT, MU_FX_RESIST, MU_FX_MISS, MU_FX_WALL };
+void muFxCast(Coord_t at, int element);
+void muFxHeal(Coord_t at);
+// From `from` in `direction` up to `end`. glyph 0: the element's own (an arrow's: its point).
+void muFxRay(Coord_t from, int direction, Coord_t end, int element, int outcome, char glyph = 0);
+void muFxBall(Coord_t from, int direction, Coord_t center, int element);
+void muFxBreath(Coord_t from, Coord_t center, int element);
+// A monster's spell, square to square: MU_FX_HIT, MU_FX_AFFECT or MU_FX_RESIST.
+void muFxBolt(Coord_t from, Coord_t to, int element, int outcome);
+// A monster's blow (monster_attacks description id). seen: the monster is lit.
+void muFxMonsterBlow(Coord_t from, Coord_t target, int description, bool hit, bool seen);
+// One melee blow; weapon is the wielded item's category (TV_*).
+void muFxSwing(Coord_t from, Coord_t target, int weapon, int outcome, bool critical);
+// While one is alive, animations play at the same time (Starlite's eight beams).
+struct MuFxTogether {
+    MuFxTogether();
+    ~MuFxTogether();
+};
+// drawDungeonPanel(): where this screen's map is, and that it is being drawn.
+void muMapPanel(bool begin);
+void muMapTile(bool begin);
 
 // While one of these is alive, a prompt does not hold the player's level:
 // it is a menu or a question before anything has changed.

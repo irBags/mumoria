@@ -191,6 +191,7 @@ void playerThrowItem() {
     Coord_t old_coord = py.pos;
 
     bool flag = false;
+    MU_ONLY(int fx_end = MU_FX_NONE;)
 
     while (!flag) {
         (void) playerMovePosition(dir, coord);
@@ -244,6 +245,7 @@ void playerThrowItem() {
                     }
 
                     damage = monsterTakeHit((int) tile.creature_id, tdam);
+                    MU_ONLY(fx_end = damage >= 0 ? MU_FX_KILL : MU_FX_HIT;)
 
                     if (damage >= 0) {
                         if (!visible) {
@@ -255,15 +257,18 @@ void playerThrowItem() {
                         displayCharacterExperience();
                     }
                 } else {
+                    MU_ONLY(fx_end = MU_FX_MISS;)
                     inventoryDropOrThrowItem(old_coord, &thrown_item);
                 }
             } else {
                 // do not test tile.field_mark here
 
+#ifndef MUMORIA // fx.cpp animates it
                 if (coordInsidePanel(coord) && py.flags.blind < 1 && (tile.temporary_light || tile.permanent_light)) {
                     panelPutTile(tile_char, coord);
                     putQIO(); // show object moving
                 }
+#endif
             }
         } else {
             flag = true;
@@ -273,4 +278,9 @@ void playerThrowItem() {
         old_coord.y = coord.y;
         old_coord.x = coord.x;
     }
+    // arrows and bolts fly point first (glyph 0); a flask of oil bursts in flame
+#ifdef MUMORIA
+    bool shaft = thrown_item.category_id == TV_ARROW || thrown_item.category_id == TV_BOLT;
+    muFxRay(py.pos, dir, coord, thrown_item.category_id == TV_FLASK ? MU_FX_FIRE : MU_FX_PHYSICAL, fx_end, shaft ? 0 : tile_char);
+#endif
 }

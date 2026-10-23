@@ -74,4 +74,7 @@
 
 #ifdef MUMORIA
 #include "mumoria/hooks.h"
+#define MU_ONLY(...) __VA_ARGS__
+#else
+#define MU_ONLY(...)
 #endif

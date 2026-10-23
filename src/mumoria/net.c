@@ -180,6 +180,7 @@ static void *io_thread(void *arg) {
         int kill = c->kill;
         pthread_mutex_unlock(&c->lock);
 
+        int fx_wait = mu_vt_fx_tick(&c->screen); // the next animation frame
         if (pending == sent) {
             pending = mu_vt_take_output(&c->screen, out, sizeof(out));
             sent = 0;
@@ -197,7 +198,11 @@ static void *io_thread(void *arg) {
         fds[0].events = POLLIN | (pending > sent ? POLLOUT : 0);
         fds[1].fd = c->wake_pipe[0];
         fds[1].events = POLLIN;
-        if (poll(fds, 2, kill ? 200 : 1000) < 0) {
+        int timeout = kill ? 200 : 1000;
+        if (fx_wait >= 0 && fx_wait < timeout) {
+            timeout = fx_wait;
+        }
+        if (poll(fds, 2, timeout) < 0) {
             if (errno == EINTR) {
                 continue;
             }

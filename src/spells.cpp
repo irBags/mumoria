@@ -613,6 +613,7 @@ static void spellLightLineTouchesMonster(int monster_id) {
 // Leave a line of light in given dir, blue light can sometimes hurt creatures. -RAK-
 void spellLightLine(Coord_t coord, int direction) {
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord;)
     bool finished = false;
 
     Coord_t tmp_coord = Coord_t{0, 0};
@@ -654,6 +655,7 @@ void spellLightLine(Coord_t coord, int direction) {
         (void) playerMovePosition(direction, coord);
         distance++;
     }
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_LIGHT, MU_FX_NONE);)
 }
 
 // Light line in all directions -RAK-
@@ -662,6 +664,7 @@ void spellStarlite(Coord_t coord) {
         printMessage("The end of the staff bursts into a blue shimmering light.");
     }
 
+    MU_ONLY(MuFxTogether together;)
     for (int dir = 1; dir <= 9; dir++) {
         if (dir != 5) {
             spellLightLine(coord, dir);
@@ -672,6 +675,7 @@ void spellStarlite(Coord_t coord) {
 // Disarms all traps/chests in a given direction -RAK-
 bool spellDisarmAllInDirection(Coord_t coord, int direction) {
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord;)
     bool disarmed = false;
 
     Tile_t *tile = nullptr;
@@ -712,6 +716,7 @@ bool spellDisarmAllInDirection(Coord_t coord, int direction) {
         distance++;
     } while (distance <= config::treasure::OBJECT_BOLTS_MAX_RANGE && tile->feature_id <= MAX_OPEN_SPACE);
 
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_ARCANE, MU_FX_NONE);)
     return disarmed;
 }
 
@@ -816,6 +821,7 @@ void spellFireBolt(Coord_t coord, int direction, int damage_hp, int spell_type, 
     spellGetAreaAffectFlags(spell_type, weapon_type, harm_type, &dummy);
 
     Coord_t old_coord = Coord_t{0, 0};
+    MU_ONLY(Coord_t fx_from = coord; int fx_end = MU_FX_WALL;)
 
     int distance = 0;
     bool finished = false;
@@ -838,14 +844,18 @@ void spellFireBolt(Coord_t coord, int direction, int damage_hp, int spell_type, 
 
         if (tile.creature_id > 1) {
             finished = true;
+            MU_ONLY(fx_end = MU_FX_HIT;)
             spellFireBoltTouchesMonster(tile, damage_hp, harm_type, weapon_type, spell_name);
         } else if (coordInsidePanel(coord) && py.flags.blind < 1) {
+#ifndef MUMORIA // fx.cpp animates it
             panelPutTile('*', coord);
 
             // show the bolt
             putQIO();
+#endif
         }
     }
+    MU_ONLY(muFxRay(fx_from, direction, coord, spell_type, fx_end);)
 }
 
 // Shoot a ball in a given direction.  Note that balls have an area affect. -RAK-
@@ -861,6 +871,7 @@ void spellFireBall(Coord_t coord, int direction, int damage_hp, int spell_type, 
 
     Coord_t old_coord = Coord_t{0, 0};
     Coord_t spot = Coord_t{0, 0};
+    MU_ONLY(Coord_t fx_from = coord;)
 
     int distance = 0;
     bool finished = false;
@@ -890,6 +901,7 @@ void spellFireBall(Coord_t coord, int direction, int damage_hp, int spell_type, 
             }
 
             // The ball hits and explodes.
+            MU_ONLY(muFxBall(fx_from, direction, coord, spell_type);)
 
             // The explosion.
             for (int row = coord.y - max_distance; row <= coord.y + max_distance; row++) {
@@ -936,7 +948,9 @@ void spellFireBall(Coord_t coord, int direction, int damage_hp, int spell_type, 
                                 }
                                 tile->permanent_light = saved_lit_status;
                             } else if (coordInsidePanel(spot) && py.flags.blind < 1) {
+#ifndef MUMORIA
                                 panelPutTile('*', spot);
+#endif
                             }
                         }
                     }
@@ -975,10 +989,12 @@ void spellFireBall(Coord_t coord, int direction, int damage_hp, int spell_type, 
             }
             // End ball hitting.
         } else if (coordInsidePanel(coord) && py.flags.blind < 1) {
+#ifndef MUMORIA
             panelPutTile('*', coord);
 
             // show bolt
             putQIO();
+#endif
         }
     }
 }
@@ -994,6 +1010,7 @@ void spellBreath(Coord_t coord, int monster_id, int damage_hp, int spell_type, c
     spellGetAreaAffectFlags(spell_type, weapon_type, harm_type, &destroy);
 
     Coord_t location = Coord_t{0, 0};
+    MU_ONLY(muFxBreath(monsters[monster_id].pos, coord, spell_type);)
 
     for (location.y = coord.y - 2; location.y <= coord.y + 2; location.y++) {
         for (location.x = coord.x - 2; location.x <= coord.x + 2; location.x++) {
@@ -1009,7 +1026,9 @@ void spellBreath(Coord_t coord, int monster_id, int damage_hp, int spell_type, c
                     // been set by a previous monster, but the breath should still
                     // be visible until the blindness takes effect
                     if (coordInsidePanel(location) && ((py.flags.status & config::player::status::PY_BLIND) == 0u)) {
+#ifndef MUMORIA
                         panelPutTile('*', location);
+#endif
                     }
 
                     if (tile.creature_id > 1) {
@@ -1151,6 +1170,7 @@ bool spellRechargeItem(int number_of_charges) {
 // Increase or decrease a creatures hit points -RAK-
 bool spellChangeMonsterHitPoints(Coord_t coord, int direction, int damage_hp) {
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord; int fx_end = MU_FX_WALL;)
     bool changed = false;
     bool finished = false;
 
@@ -1181,15 +1201,18 @@ bool spellChangeMonsterHitPoints(Coord_t coord, int direction, int damage_hp) {
             }
 
             changed = true;
+            MU_ONLY(fx_end = damage_hp > 0 ? MU_FX_HIT : MU_FX_AFFECT;)
         }
     }
 
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_DRAIN, fx_end);)
     return changed;
 }
 
 // Drains life; note it must be living. -RAK-
 bool spellDrainLifeFromMonster(Coord_t coord, int direction) {
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord; int fx_end = MU_FX_WALL;)
     bool drained = false;
     bool finished = false;
 
@@ -1221,12 +1244,15 @@ bool spellDrainLifeFromMonster(Coord_t coord, int direction) {
                 }
 
                 drained = true;
+                MU_ONLY(fx_end = MU_FX_HIT;)
             } else {
                 creature_recall[monster.creature_id].defenses |= config::monsters::defense::CD_UNDEAD;
+                MU_ONLY(fx_end = MU_FX_RESIST;)
             }
         }
     }
 
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_DRAIN, fx_end);)
     return drained;
 }
 
@@ -1234,6 +1260,7 @@ bool spellDrainLifeFromMonster(Coord_t coord, int direction) {
 // NOTE: cannot slow a winning creature (BALROG)
 bool spellSpeedMonster(Coord_t coord, int direction, int speed) {
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord; int fx_end = MU_FX_WALL;)
     bool changed = false;
     bool finished = false;
 
@@ -1255,6 +1282,7 @@ bool spellSpeedMonster(Coord_t coord, int direction, int speed) {
             Creature_t const &creature = creatures_list[monster.creature_id];
 
             auto name = monsterNameDescription(creature.name, monster.lit);
+            MU_ONLY(fx_end = MU_FX_AFFECT;)
 
             if (speed > 0) {
                 monster.speed += speed;
@@ -1272,18 +1300,21 @@ bool spellSpeedMonster(Coord_t coord, int direction, int speed) {
                 printMonsterActionText(name, "starts moving slower.");
             } else {
                 monster.sleep_count = 0;
+                MU_ONLY(fx_end = MU_FX_RESIST;)
 
                 printMonsterActionText(name, "is unaffected.");
             }
         }
     }
 
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_MIND, fx_end);)
     return changed;
 }
 
 // Confuse a creature -RAK-
 bool spellConfuseMonster(Coord_t coord, int direction) {
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord; int fx_end = MU_FX_WALL;)
     bool confused = false;
     bool finished = false;
 
@@ -1318,6 +1349,7 @@ bool spellConfuseMonster(Coord_t coord, int direction) {
                 }
 
                 printMonsterActionText(name, "is unaffected.");
+                MU_ONLY(fx_end = MU_FX_RESIST;)
             } else {
                 if (monster.confused_amount != 0u) {
                     monster.confused_amount += 3;
@@ -1327,18 +1359,21 @@ bool spellConfuseMonster(Coord_t coord, int direction) {
                 monster.sleep_count = 0;
 
                 confused = true;
+                MU_ONLY(fx_end = MU_FX_AFFECT;)
 
                 printMonsterActionText(name, "appears confused.");
             }
         }
     }
 
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_MIND, fx_end);)
     return confused;
 }
 
 // Sleep a creature. -RAK-
 bool spellSleepMonster(Coord_t coord, int direction) {
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord; int fx_end = MU_FX_WALL;)
     bool asleep = false;
     bool finished = false;
 
@@ -1367,22 +1402,26 @@ bool spellSleepMonster(Coord_t coord, int direction) {
                 }
 
                 printMonsterActionText(name, "is unaffected.");
+                MU_ONLY(fx_end = MU_FX_RESIST;)
             } else {
                 monster.sleep_count = 500;
 
                 asleep = true;
+                MU_ONLY(fx_end = MU_FX_AFFECT;)
 
                 printMonsterActionText(name, "falls asleep.");
             }
         }
     }
 
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_MIND, fx_end);)
     return asleep;
 }
 
 // Turn stone to mud, delete wall. -RAK-
 bool spellWallToMud(Coord_t coord, int direction) {
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord; int fx_end = MU_FX_WALL;)
     bool turned = false;
     bool finished = false;
 
@@ -1401,6 +1440,7 @@ bool spellWallToMud(Coord_t coord, int direction) {
             finished = true;
 
             (void) playerTunnelWall(coord, 1, 0);
+            MU_ONLY(fx_end = MU_FX_AFFECT;)
 
             if (caveTileVisible(coord)) {
                 turned = true;
@@ -1452,10 +1492,12 @@ bool spellWallToMud(Coord_t coord, int direction) {
                     printMonsterActionText(name, "grunts in pain!");
                 }
                 finished = true;
+                MU_ONLY(fx_end = MU_FX_HIT;)
             }
         }
     }
 
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_MUD, fx_end);)
     return turned;
 }
 
@@ -1463,6 +1505,7 @@ bool spellWallToMud(Coord_t coord, int direction) {
 bool spellDestroyDoorsTrapsInDirection(Coord_t coord, int direction) {
     bool destroyed = false;
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord;)
 
     Tile_t *tile = nullptr;
 
@@ -1494,6 +1537,7 @@ bool spellDestroyDoorsTrapsInDirection(Coord_t coord, int direction) {
         }
     } while ((distance <= config::treasure::OBJECT_BOLTS_MAX_RANGE) || tile->feature_id <= MAX_OPEN_SPACE);
 
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_ARCANE, MU_FX_WALL);)
     return destroyed;
 }
 
@@ -1501,6 +1545,7 @@ bool spellDestroyDoorsTrapsInDirection(Coord_t coord, int direction) {
 // NOTE: cannot polymorph a winning creature (BALROG)
 bool spellPolymorphMonster(Coord_t coord, int direction) {
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord; int fx_end = MU_FX_WALL;)
     bool morphed = false;
     bool finished = false;
 
@@ -1521,6 +1566,7 @@ bool spellPolymorphMonster(Coord_t coord, int direction) {
 
             if (randomNumber(MON_MAX_LEVELS) > creature.level) {
                 finished = true;
+                MU_ONLY(fx_end = MU_FX_AFFECT;)
 
                 dungeonDeleteMonster((int) tile.creature_id);
 
@@ -1534,16 +1580,19 @@ bool spellPolymorphMonster(Coord_t coord, int direction) {
             } else {
                 auto name = monsterNameDescription(creature.name, monster.lit);
                 printMonsterActionText(name, "is unaffected.");
+                MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_MIND, MU_FX_RESIST); fx_from = coord;)
             }
         }
     }
 
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_MIND, fx_end);)
     return morphed;
 }
 
 // Create a wall. -RAK-
 bool spellBuildWall(Coord_t coord, int direction) {
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord; int fx_end = MU_FX_WALL;)
     bool built = false;
     bool finished = false;
 
@@ -1565,6 +1614,7 @@ bool spellBuildWall(Coord_t coord, int direction) {
         if (tile.creature_id > 1) {
             finished = true;
 
+            MU_ONLY(fx_end = MU_FX_HIT;)
             Monster_t &monster = monsters[tile.creature_id];
             Creature_t const &creature = creatures_list[monster.creature_id];
 
@@ -1603,12 +1653,14 @@ bool spellBuildWall(Coord_t coord, int direction) {
         built = true;
     }
 
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_MUD, fx_end);)
     return built;
 }
 
 // Replicate a creature -RAK-
 bool spellCloneMonster(Coord_t coord, int direction) {
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord; int fx_end = MU_FX_WALL;)
     bool finished = false;
 
     while (!finished) {
@@ -1621,12 +1673,14 @@ bool spellCloneMonster(Coord_t coord, int direction) {
             finished = true;
         } else if (tile.creature_id > 1) {
             monsters[tile.creature_id].sleep_count = 0;
+            MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_MIND, MU_FX_AFFECT);)
 
             // monptr of 0 is safe here, since can't reach here from creatures
             return monsterMultiply(coord, (int) monsters[tile.creature_id].creature_id, 0);
         }
     }
 
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_MIND, fx_end);)
     return false;
 }
 
@@ -1705,6 +1759,7 @@ void spellTeleportPlayerTo(Coord_t coord) {
 // Teleport all creatures in a given direction away -RAK-
 bool spellTeleportAwayMonsterInDirection(Coord_t coord, int direction) {
     int distance = 0;
+    MU_ONLY(Coord_t fx_from = coord; int fx_end = MU_FX_WALL;)
     bool teleported = false;
     bool finished = false;
 
@@ -1729,6 +1784,7 @@ bool spellTeleportAwayMonsterInDirection(Coord_t coord, int direction) {
         }
     }
 
+    MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_MIND, fx_end);)
     return teleported;
 }
 
@@ -1920,6 +1976,7 @@ bool spellChangePlayerHitPoints(int adjustment) {
         py.misc.current_hp_fraction = 0;
     }
     printCharacterCurrentHitPoints();
+    MU_ONLY(muFxHeal(py.pos);)
 
     adjustment = adjustment / 5;
 

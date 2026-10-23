@@ -368,6 +368,50 @@ steps, and what stays compatible.
   A target who hangs up still takes it, and dies if it is lethal.
 * Every attack is written to `audit`.
 
+### 2.18 Animations: spells, missiles and blows
+
+* **Why:** Umoria's bolts are drawn with no delay, so over the network they
+  never show. Fights should be seen, by the fighter and by everyone near.
+* **Files:** `src/mumoria/fx.cpp` (the shapes), `vterm.c` (playing them),
+  `net.c` (the frame timer). Hooks in `spells.cpp`, `mage_spells.cpp`,
+  `player_pray.cpp`, `staves.cpp`, `player_throw.cpp`, `player.cpp`,
+  `monster.cpp`, written `MU_ONLY(...)` (`headers.h`), which is empty in the
+  single-player build.
+* **How:** the engine settles the action at once, as before. The hook then
+  queues timed cells in level coordinates (`MuFxCell`) on the screen of
+  each player on the level who can see each square (line of sight, 20
+  squares, not blind, not in a building). Each connection's I/O thread plays
+  them over the map. Nobody waits for an animation, and the world lock is
+  never held for one.
+* **Never over a menu:** vterm marks the cells the map was drawn on
+  (`mapcell`, set by `panelPutTile` and `drawDungeonPanel`). Anything else
+  written there (the pack, the spell list, a store) clears the mark, so an
+  animation shows only where the map is.
+* **One player's animations play in turn** (a thread-local cursor, at most
+  1.5 s ahead); `MuFxTogether` plays several at once (Starlite's beams).
+* **What is drawn** (xterm 256 colours, by element):
+  * casting: a ring around the caster in the spell's colour; a failed spell
+    fizzles in grey smoke
+  * bolts fly a square every 25 ms (lightning lingers along its path), then
+    burst on the target; a kill adds a red splash; a resisted spell turns
+    aside to the square beside the target; a wall takes a splash
+  * balls and breath fly, then blow out in rings to radius 2
+  * thrown things fly point first (arrows) or as themselves; a miss goes by
+    beside the target
+  * blows by weapon: swords slash across, axes and polearms chop, maces
+    thump, fists punch; a miss lands beside the target; a critical flashes
+    yellow
+  * healing: green crosses around the healed
+  * monsters' blows, by attack: hits, crushes and tramples thump; bites
+    sink in; claws rake; stings stab; a gaze lights its eyes, then yours;
+    breath and spores puff a cloud; spit splashes; a wail rings out; touches,
+    crawls, slime and drool tint you; a miss goes by beside you
+  * monsters' spells: a ring around the caster, then a bolt to you (wounds
+    dark red, blindness black, confusion, fear, hold and slow violet),
+    turned aside when you resist; drain mana flows from you to it; a summoned
+    monster appears in a ring; teleporting shows where it was
+* The animations use their own random numbers, never the engine's.
+
 ## 3. Menus: drawn the way Umoria draws
 
 There are no new windows. Bank, Guild Hall, Auction House and Trade are drawn
@@ -418,6 +462,12 @@ Settings are in `mumoria.conf` (key = value). `mumoria.conf.example` lists
 them: `port`, `db`, `guild_cost`, `party_gold_per_level`, `irc_host`,
 `irc_port`, `irc_channel`, `irc_nick`, `aol_token_secret`.
 
+Without root, ncurses can be built from source into `~/local`
+(`./configure --prefix=$HOME/local --enable-overwrite --without-cxx-binding`,
+then link `libncurses.a` to `libncursesw.a`) and found with
+`cmake -DCMAKE_PREFIX_PATH=$HOME/local`; that is how the WSL test box builds
+`umoria`.
+
 The build needs only the SQLite runtime library (`libsqlite3.so.0`), not its
 development header (`src/mumoria/sqlite3_min.h`). Without the ncurses
 development files, CMake skips the single-player `umoria` target with a
@@ -459,6 +509,12 @@ of the following against the built server:
   * `/pvp` changes, then is refused for 24 hours
 * battle turns: off, a player acts freely; on, a member's second action waits
   until the other member has acted, then runs
+* animations (2.18), seen by the caster and by a player beside them, frame
+  for frame: casting rings, Magic Missile flying and bursting and killing,
+  Stinking Cloud's rings, a bolt splashing on a wall, a thrown book's hit,
+  fist blows and misses beside the target, a dagger's slashes on monsters
+  and a critical in PvP; monsters' hits, bites, claws, gazes, crawls,
+  touches, spores and misses on a player; none drawn over an open pack list
 
 ## 6. Not done yet
 
@@ -468,6 +524,9 @@ of the following against the built server:
 * While waiting for others in a battle round, the chat line (`'`) cannot be
   opened; the wait is at most `MU_ROUND_TIMEOUT`.
 * The extra monster spawns for several teams were not measured by a test.
+* Animations not yet seen in a test: monster breath and monster spells (no
+  caster cast within a test's lifetime), a failed spell's fizzle, axe and
+  mace blows, arrows in flight at range.
 * Umoria's look command keeps a little state in statics
   (`dungeon_los.cpp`), and so does its haggling (`store.cpp`). Two players
   doing those at the same moment can disturb each other's display, but not

@@ -80,6 +80,7 @@ bool coordInsidePanel(Coord_t coord) {
 
 // Prints the map of the dungeon -RAK-
 void drawDungeonPanel() {
+    MU_ONLY(muMapPanel(true);)
     int line = 1;
 
     Coord_t coord = Coord_t{0, 0};
@@ -97,6 +98,7 @@ void drawDungeonPanel() {
             }
         }
     }
+    MU_ONLY(muMapPanel(false);)
 }
 
 // Draws entire screen -RAK-

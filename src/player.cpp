@@ -1162,21 +1162,26 @@ static void playerAttackMonster(Coord_t coord) {
         if (!playerTestBeingHit(base_to_hit, (int) py.misc.level, total_to_hit, (int) creature.ac, PlayerClassLevelAdj::BTH)) {
             (void) snprintf(msg, MORIA_MESSAGE_SIZE, "You miss %s.", name);
             printMessage(msg);
+            MU_ONLY(muFxSwing(py.pos, coord, item.category_id, MU_FX_MISS, false);)
             continue;
         }
 
         (void) snprintf(msg, MORIA_MESSAGE_SIZE, "You hit %s.", name);
         printMessage(msg);
 
+        MU_ONLY(int fx_plain;)
         if (item.category_id != TV_NOTHING) {
             damage = diceRoll(item.damage);
             damage = itemMagicAbilityDamage(item, damage, monster.creature_id);
+            MU_ONLY(fx_plain = damage;)
             damage = playerWeaponCriticalBlow((int) item.weight, total_to_hit, damage, PlayerClassLevelAdj::BTH);
         } else {
             // Bare hands!?
             damage = diceRoll(Dice_t{1, 1});
+            MU_ONLY(fx_plain = damage;)
             damage = playerWeaponCriticalBlow(1, 0, damage, PlayerClassLevelAdj::BTH);
         }
+        MU_ONLY(bool fx_critical = damage > fx_plain;)
 
         damage += py.misc.plusses_to_damage;
         if (damage < 0) {
@@ -1206,7 +1211,9 @@ static void playerAttackMonster(Coord_t coord) {
         }
 
         // See if we done it in.
-        if (monsterTakeHit(creature_id, damage) >= 0) {
+        bool slain = monsterTakeHit(creature_id, damage) >= 0;
+        MU_ONLY(muFxSwing(py.pos, coord, item.category_id, slain ? MU_FX_KILL : MU_FX_HIT, fx_critical);)
+        if (slain) {
             (void) snprintf(msg, MORIA_MESSAGE_SIZE, "You have slain %s.", name);
             printMessage(msg);
             displayCharacterExperience();
@@ -1448,7 +1455,7 @@ bool playerTunnelWall(Coord_t coord, int digging_ability, int digging_chance) {
 #ifdef MUMORIA
 // playerAttackMonster()'s blows, against a player's armour class; no slays,
 // no confusing touch (those are for monsters).
-int muPlayerMeleeDamage(int target_ac, const char *target_name) {
+int muPlayerMeleeDamage(int target_ac, const char *target_name, Coord_t target) {
     Inventory_t &item = py.inventory[PlayerEquipment::Wield];
     int blows, total_to_hit;
     playerCalculateToHitBlows(item.category_id, item.weight, blows, total_to_hit);
@@ -1460,19 +1467,21 @@ int muPlayerMeleeDamage(int target_ac, const char *target_name) {
         if (!playerTestBeingHit(base_to_hit, (int) py.misc.level, total_to_hit, target_ac, PlayerClassLevelAdj::BTH)) {
             (void) snprintf(msg, MORIA_MESSAGE_SIZE, "You miss %s.", target_name);
             printMessage(msg);
+            muFxSwing(py.pos, target, item.category_id, MU_FX_MISS, false);
             continue;
         }
         (void) snprintf(msg, MORIA_MESSAGE_SIZE, "You hit %s.", target_name);
         printMessage(msg);
 
-        int damage;
+        int damage, plain;
         if (item.category_id != TV_NOTHING) {
-            damage = diceRoll(item.damage);
+            damage = plain = diceRoll(item.damage);
             damage = playerWeaponCriticalBlow((int) item.weight, total_to_hit, damage, PlayerClassLevelAdj::BTH);
         } else {
-            damage = diceRoll(Dice_t{1, 1});
+            damage = plain = diceRoll(Dice_t{1, 1});
             damage = playerWeaponCriticalBlow(1, 0, damage, PlayerClassLevelAdj::BTH);
         }
+        muFxSwing(py.pos, target, item.category_id, MU_FX_HIT, damage > plain);
         damage += py.misc.plusses_to_damage;
         total += damage > 0 ? damage : 0;
     }

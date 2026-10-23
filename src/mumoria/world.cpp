@@ -452,6 +452,7 @@ void mu_enter_game(MuSession *s, int depth) {
     dg.floor[py.pos.y][py.pos.x].creature_id = 1;
 
     s->level = L;
+    mu_vt_fx_clear(mu_screen_of(s)); // the last level's animations
     s->ctx.marks.clear();
     s->ctx.lit.clear();
     s->ctx.marks_depth = depth;

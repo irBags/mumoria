@@ -27,6 +27,18 @@ extern "C" {
 #define MU_ATTR_FG(n) ((1u << 25) | (uint32_t) (n))
 #define MU_ATTR_BG(n) ((1u << 26) | ((uint32_t) (n) << 8))
 
+// One cell of an animation (fx.cpp): from t0 to t1 (mu_vt_now_ms), the
+// level's square y, x shows ch in attr, over the map. ch MU_FX_TINT keeps the
+// square's own character and only changes its look.
+#define MU_FX_MAX 1024
+#define MU_FX_TINT 1
+typedef struct {
+    int64_t t0, t1;
+    int16_t y, x;
+    char ch;
+    uint32_t attr;
+} MuFxCell;
+
 typedef struct MuScreen {
     pthread_mutex_t lock;
     char cell[MU_ROWS][MU_COLS];
@@ -42,6 +54,17 @@ typedef struct MuScreen {
 
     char chat[MU_CHAT_ROWS][MU_COLS + 1];
     int chat_dirty;
+
+    // Which cells show the map (drawn while map_drawing > 0): animations
+    // are drawn only there, so never over a menu or a list.
+    uint8_t mapcell[MU_GAME_ROWS][MU_COLS];
+    uint8_t saved_mapcell[MU_GAME_ROWS][MU_COLS];
+    int map_drawing;
+    int map_set, map_top, map_bottom, map_left, map_right, map_row_prt, map_col_prt;
+    MuFxCell fx[MU_FX_MAX];
+    int fx_n;
+    char ov_ch[MU_GAME_ROWS][MU_COLS]; // what is drawn over the map now; 0 = nothing
+    uint32_t ov_attr[MU_GAME_ROWS][MU_COLS];
 
     // output, drained by the session's I/O thread
     char *out;
@@ -72,6 +95,16 @@ void mu_vt_raw(MuScreen *s, const char *bytes, int len); // telnet negotiation e
 
 // Adds a line at the bottom of the chat pane, scrolling it. Any thread.
 void mu_vt_chat(MuScreen *s, const char *line);
+
+// Animations (fx.cpp makes them, the I/O thread plays them).
+int64_t mu_vt_now_ms(void);
+void mu_vt_map_drawing(MuScreen *s, int delta); // +1 before drawing map squares, -1 after
+// The panel the map shows: a level square y, x is at screen row y - row_prt, column x - col_prt.
+void mu_vt_map_panel(MuScreen *s, int top, int bottom, int left, int right, int row_prt, int col_prt);
+void mu_vt_fx_add(MuScreen *s, const MuFxCell *cells, int n);
+void mu_vt_fx_clear(MuScreen *s);
+// Draws the frame due now; returns the ms until the next change, -1 if none.
+int mu_vt_fx_tick(MuScreen *s);
 
 // Takes what is waiting to be sent; returns its length (0 if none).
 int mu_vt_take_output(MuScreen *s, char *buf, int max);

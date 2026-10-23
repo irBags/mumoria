@@ -66,6 +66,43 @@ static bool canReadSpells() {
     return true;
 }
 
+#ifdef MUMORIA
+// The colour of the light around the caster.
+static int castSpellElement(int spell_id) {
+    switch ((MageSpellId) spell_id) {
+        case MageSpellId::MagicMissile:
+            return MU_FX_MISSILE;
+        case MageSpellId::StinkingCloud:
+            return MU_FX_GAS;
+        case MageSpellId::LightningBolt:
+            return MU_FX_LIGHTNING;
+        case MageSpellId::FrostBolt:
+        case MageSpellId::FrostBall:
+            return MU_FX_FROST;
+        case MageSpellId::FireBolt:
+        case MageSpellId::FireBall:
+            return MU_FX_FIRE;
+        case MageSpellId::CureLightWounds:
+        case MageSpellId::CurePoison:
+            return MU_FX_HEAL;
+        case MageSpellId::Confusion:
+        case MageSpellId::Sleep1:
+        case MageSpellId::Sleep2:
+        case MageSpellId::Sleep3:
+        case MageSpellId::PolymorphOther:
+        case MageSpellId::SpeedMonster:
+        case MageSpellId::TeleportOther:
+            return MU_FX_MIND;
+        case MageSpellId::WallToMud:
+            return MU_FX_MUD;
+        case MageSpellId::LightArea:
+            return MU_FX_LIGHT;
+        default:
+            return MU_FX_ARCANE;
+    }
+}
+#endif
+
 static void castSpell(int spell_id) {
     int dir;
 
@@ -233,7 +270,9 @@ void getAndCastMagicSpell() {
 
     if (randomNumber(100) < chance) {
         printMessage("You failed to get the spell off!");
+        MU_ONLY(muFxCast(py.pos, MU_FX_FIZZLE);)
     } else {
+        MU_ONLY(muFxCast(py.pos, castSpellElement(choice + 1));)
         castSpell(choice + 1);
 
         if (!game.player_free_turn && (py.flags.spells_worked & (1L << choice)) == 0) {

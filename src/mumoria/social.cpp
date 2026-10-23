@@ -576,7 +576,7 @@ static void pvp_attack(MuSession *s) {
     } else {
         game.player_free_turn = false;
         int ac = t->ctx.py.misc.ac + t->ctx.py.misc.magical_ac;
-        int damage = muPlayerMeleeDamage(ac, t->char_name.c_str());
+        int damage = muPlayerMeleeDamage(ac, t->char_name.c_str(), at);
         if (damage > 0) {
             t->pending_pvp_damage += damage;
             t->pvp_attacker = s->char_name;

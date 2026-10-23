@@ -205,6 +205,29 @@ static void playerRecitePrayer(int prayer_type) {
     }
 }
 
+#ifdef MUMORIA
+// The colour of the light around the priest.
+static int prayerElement(int prayer_type) {
+    switch ((PriestSpellTypes) (prayer_type + 1)) {
+        case PriestSpellTypes::CureLightWounds:
+        case PriestSpellTypes::CureMediumWounds:
+        case PriestSpellTypes::CureSeriousWounds:
+        case PriestSpellTypes::CureCriticalWounds:
+        case PriestSpellTypes::Heal:
+        case PriestSpellTypes::SlowPoison:
+        case PriestSpellTypes::NeutralizePoison:
+            return MU_FX_HEAL;
+        case PriestSpellTypes::BlindCreature:
+        case PriestSpellTypes::Sanctuary:
+            return MU_FX_MIND;
+        case PriestSpellTypes::CallLight:
+            return MU_FX_LIGHT;
+        default:
+            return MU_FX_HOLY;
+    }
+}
+#endif
+
 // Pray like HELL. -RAK-
 void pray() {
     game.player_free_turn = true;
@@ -237,7 +260,9 @@ void pray() {
 
     if (randomNumber(100) < chance) {
         printMessage("You lost your concentration!");
+        MU_ONLY(muFxCast(py.pos, MU_FX_FIZZLE);)
     } else {
+        MU_ONLY(muFxCast(py.pos, prayerElement(choice));)
         playerRecitePrayer(choice);
 
         if (!game.player_free_turn) {
