@@ -2347,8 +2347,11 @@ static void playDungeon() {
 
         // Check for creature generation
 #ifdef MUMORIA
-        // more arrive when several players or parties share a level
-        if (randomNumber(muNewMonsterChance()) == 1) {
+        // more arrive when several players or parties share a level; the
+        // town keeps to the number a new town has (world.cpp)
+        if (dg.current_level == 0) {
+            muTownPeople();
+        } else if (randomNumber(muNewMonsterChance()) == 1) {
 #else
         if (randomNumber(config::monsters::MON_CHANCE_OF_NEW) == 1) {
 #endif

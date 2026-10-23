@@ -52,6 +52,10 @@ void muFindSpot(Coord_t &coord);
 // Umoria's 1 in MON_CHANCE_OF_NEW, divided by the number of players and
 // parties exploring the level (never below 1 in 40). The town keeps its own.
 int muNewMonsterChance();
+// Each turn in the town: while it has more people than a new town has (4 by
+// day, 8 by night), someone nobody can see leaves; while it has fewer, 1 in
+// MON_CHANCE_OF_NEW someone new arrives, asleep and out of everyone's sight.
+void muTownPeople();
 
 // Animations (fx.cpp), shown to everyone on the level who can see them. One
 // player's animations play one after another.

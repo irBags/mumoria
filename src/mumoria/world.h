@@ -38,6 +38,11 @@ struct MuPlayerCtx {
     // relights everyone's lamp where they stand.
     std::vector<uint8_t> marks, lit;
     int marks_depth = -1;
+    // Where this player's screen shows a monster. Umoria's monster.lit means
+    // "drawn on the screen", but monsters are the level's: it is saved and
+    // set again per player, or a monster that moves leaves its letter behind
+    // on the screens of players it was not lit for when they were loaded.
+    std::vector<Coord_t> shown;
 };
 
 struct MuLevel {

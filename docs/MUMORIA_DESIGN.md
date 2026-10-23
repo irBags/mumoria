@@ -100,6 +100,18 @@ meantime, which is what Umoria's turn-based pace already means. Other players
 block both monsters and players. Bumping into one prints "Name is in your way."
 It never attacks; PvP has its own key (2.17).
 
+**The town is different:** the townspeople move on every player's turn, so
+one player walking about moves them for everyone.
+
+**What each screen shows of the monsters.** Umoria's `monster.lit` means "this
+monster is drawn on the screen", and a moving monster's old square is redrawn
+only when it is set. Monsters belong to the level, so the flag is kept for
+each player: `save_player` records where that player's screen shows monsters
+(`MuPlayerCtx::shown`) and `load_player` sets the flags back from it, redrawing
+those squares. Without this, a monster lit for one player but not another left
+its letter behind on the screen of the player whose turn moved it. Every other
+player on the level sees the move when their map is redrawn after the turn.
+
 **Movement is never turn-based.** Each player's keys run as soon as they
 arrive; nobody waits for anyone else to walk, in the town or in the dungeon.
 
@@ -108,7 +120,21 @@ each turn is divided by the number of **teams** exploring the level
 (`muNewMonsterChance`). A party counts as one team, guild-mates outside a
 party count as one, and each player alone counts as one. The chance never
 goes above 1 in 40. One player cannot clear a level for everyone else who
-comes through. The town keeps Umoria's own townspeople.
+comes through.
+
+**The town keeps to a new town's numbers** (`muTownPeople`). Single-player
+Umoria makes the town afresh on each visit, with 4 townspeople by day and 8
+by night, asleep. Mumoria's town is never made again, so Umoria's 1 in 160
+newcomer each turn (awake) would fill it with Mercenaries and Veterans over
+hours, and new players were killed within a few steps. Instead:
+
+* Someone entering a town that nobody is in finds new townspeople, asleep,
+  as Umoria's own town would have (`fresh_townspeople`, world.cpp).
+* While the town has more than a new town, someone no player can see leaves
+  each turn. While it has fewer, on Umoria's roll someone new arrives,
+  asleep and out of every player's sight.
+* A player arriving in the town is placed at least 8 squares from any awake
+  townsperson (`muFindSpot`).
 
 ## 2. Requirements, one by one
 

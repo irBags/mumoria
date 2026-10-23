@@ -1373,8 +1373,9 @@ void updateMonsters(bool attack) {
             int moves = monsterMovementRate(monster.speed);
 
 #ifdef MUMORIA
-            // a monster answers only the turns of the player nearest to it
-            if (muNearerPlayer(Coord_t{monster.pos.y, monster.pos.x}, monster.distance_from_player)) {
+            // below the town, a monster answers only the turns of the player
+            // nearest to it; the townspeople move on everyone's turns
+            if (dg.current_level != 0 && muNearerPlayer(Coord_t{monster.pos.y, monster.pos.x}, monster.distance_from_player)) {
                 moves = 0;
             }
 #endif

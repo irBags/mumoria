@@ -150,6 +150,12 @@ static void save_player(MuSession *s) {
             }
         }
         c.marks_depth = s->level->depth;
+        c.shown.clear();
+        for (int i = config::monsters::MON_MIN_INDEX_ID; i < next_free_monster_id; i++) {
+            if (monsters[i].lit) {
+                c.shown.push_back(monsters[i].pos);
+            }
+        }
         if (in_level(py.pos) && dg.floor[py.pos.y][py.pos.x].creature_id == 1) {
             dg.floor[py.pos.y][py.pos.x].creature_id = 0;
         }
@@ -189,6 +195,28 @@ static void light_lamps(MuSession *s) {
             light_around(p->ctx.py.pos);
         }
     }
+}
+
+// Monsters are lit (drawn) as this player's screen shows them. A monster that
+// moved since is still drawn where it was: that square is drawn again, and
+// the monster is drawn where it is now by the next updateMonsters().
+static void show_monsters(MuSession *s, bool same_level) {
+    if (!same_level) {
+        return;
+    }
+    MuScreen *screen = mu_vt_current;
+    mu_vt_current = mu_screen_of(s); // mu_with_player() sets it only after the swap
+    for (Coord_t const &at : s->ctx.shown) {
+        if (!in_level(at)) {
+            continue;
+        }
+        int id = dg.floor[at.y][at.x].creature_id;
+        if (id > 1) {
+            monsters[id].lit = true; // still there (or another took its place)
+        }
+        dungeonLiteSpot(at);
+    }
+    mu_vt_current = screen;
 }
 
 static void load_player(MuSession *s) {
@@ -232,7 +260,10 @@ static void load_player(MuSession *s) {
         light_lamps(s);
         for (int i = config::monsters::MON_MIN_INDEX_ID; i < next_free_monster_id; i++) {
             monsters[i].distance_from_player = (uint8_t) coordDistanceBetween(py.pos, monsters[i].pos);
+            monsters[i].lit = false;
         }
+        loaded_player = s; // show_monsters() draws as this player
+        show_monsters(s, c.marks_depth == s->level->depth);
     }
     loaded_player = s;
 }
@@ -414,6 +445,22 @@ void mu_forget_level(int depth) {
     mu_db_run("DELETE FROM level WHERE depth = ?", "i", (int64_t) depth);
 }
 
+// The town as Umoria makes it on each visit: new townspeople, asleep. Done
+// when someone enters a town nobody is in (lock held, the town loaded).
+static void fresh_townspeople() {
+    for (int y = 0; y < dg.height; y++) {
+        for (int x = 0; x < dg.width; x++) {
+            if (dg.floor[y][x].creature_id > 1) {
+                dg.floor[y][x].creature_id = 0;
+            }
+        }
+    }
+    next_free_monster_id = config::monsters::MON_MIN_INDEX_ID;
+    monster_multiply_total = 0;
+    bool night = (dg.game_turn / 5000) & 1; // dungeon_generate.cpp isNighTime()
+    monsterPlaceNewWithinDistance(night ? config::monsters::MON_MIN_TOWNSFOLK_NIGHT : config::monsters::MON_MIN_TOWNSFOLK_DAY, 3, true);
+}
+
 void mu_enter_game(MuSession *s, int depth) {
     MuLevel *L = get_level(depth);
     if (loaded_level != L) {
@@ -444,6 +491,9 @@ void mu_enter_game(MuSession *s, int depth) {
         }
     }
     py.pos = Coord_t{-1, -1};
+    if (depth == 0 && L->players.empty()) {
+        fresh_townspeople();
+    }
     if (s->arrive_near != nullptr && s->arrive_near->level == L) {
         py.pos = s->arrive_near->ctx.py.pos;
     }
@@ -455,6 +505,7 @@ void mu_enter_game(MuSession *s, int depth) {
     mu_vt_fx_clear(mu_screen_of(s)); // the last level's animations
     s->ctx.marks.clear();
     s->ctx.lit.clear();
+    s->ctx.shown.clear();
     s->ctx.marks_depth = depth;
     L->players.push_back(s);
     light_lamps(s);
@@ -723,6 +774,62 @@ int muNewMonsterChance() {
     return chance < MU_NEW_MONSTER_MIN ? MU_NEW_MONSTER_MIN : chance;
 }
 
+// Can any player on the loaded level see this square?
+static bool seen_by_a_player(Coord_t const &c) {
+    for (MuSession *p : loaded_level->players) {
+        Coord_t eye = p == loaded_player ? py.pos : p->ctx.py.pos;
+        if (!p->in_building && coordDistanceBetween(eye, c) <= config::monsters::MON_MAX_SIGHT && los(eye, c)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void muTownPeople() {
+    if (loaded_level == nullptr) {
+        return;
+    }
+    int people = next_free_monster_id - config::monsters::MON_MIN_INDEX_ID;
+    bool night = (dg.game_turn / 5000) & 1; // dungeon_generate.cpp isNighTime()
+    int want = night ? config::monsters::MON_MIN_TOWNSFOLK_NIGHT : config::monsters::MON_MIN_TOWNSFOLK_DAY;
+    if (people <= want && randomNumber(config::monsters::MON_CHANCE_OF_NEW) != 1) {
+        return;
+    }
+    if (people > want) { // too many: one leaves each turn
+        for (int i = next_free_monster_id - 1; i >= config::monsters::MON_MIN_INDEX_ID; i--) {
+            if (!seen_by_a_player(monsters[i].pos)) {
+                dungeonDeleteMonster(i);
+                return;
+            }
+        }
+        return;
+    }
+    if (people == want) {
+        return;
+    }
+    for (int tries = 0; tries < 200; tries++) {
+        Coord_t c{(int32_t) randomNumber(dg.height - 2), (int32_t) randomNumber(dg.width - 2)};
+        Tile_t const &t = dg.floor[c.y][c.x];
+        if (t.feature_id < MIN_CLOSED_SPACE && t.creature_id == 0 && !muOtherPlayerAt(c) && !seen_by_a_player(c)) {
+            (void) monsterPlaceNew(c, randomNumber(monster_levels[0]) - 1, true); // a townsperson, as monsterGetOneSuitableForLevel(0)
+            return;
+        }
+    }
+}
+
+// In the town, an awake townsperson within 8 squares: nobody arrives there.
+static bool town_danger(Coord_t const &c) {
+    if (dg.current_level != 0) {
+        return false;
+    }
+    for (int i = config::monsters::MON_MIN_INDEX_ID; i < next_free_monster_id; i++) {
+        if (monsters[i].sleep_count == 0 && coordDistanceBetween(c, monsters[i].pos) <= 8) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void muFindSpot(Coord_t &coord) {
     for (int tries = 0; tries < 20000; tries++) {
         Coord_t c{(int32_t) randomNumber(dg.height - 2), (int32_t) randomNumber(dg.width - 2)};
@@ -735,7 +842,7 @@ void muFindSpot(Coord_t &coord) {
             }
         }
         Tile_t const &t = dg.floor[c.y][c.x];
-        if (t.feature_id < MIN_CLOSED_SPACE && t.creature_id == 0 && t.treasure_id == 0 && !muOtherPlayerAt(c)) {
+        if (t.feature_id < MIN_CLOSED_SPACE && t.creature_id == 0 && t.treasure_id == 0 && !muOtherPlayerAt(c) && (tries > 10000 || !town_danger(c))) {
             coord = c;
             return;
         }
