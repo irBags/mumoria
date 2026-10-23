@@ -26,6 +26,10 @@
 #define MU_AH_MAX_PER_SELLER 10
 #define MU_TRADE_SLOTS 8
 
+#define MU_STORE_RESTOCK_HOURS 4        // a store's shared supply of an item refills over this
+#define MU_STORE_PERSONAL_HOURS 1       // a player's own stock comes back this long after they buy
+#define MU_STORE_TURNOVER_SECONDS 600   // Umoria's stock turnover, at most this often
+
 #define MU_BOSS_INTERVAL 2
 #define MU_BOSS_RESPAWN_HOURS 2
 #define MU_BOSS_TIER_CAP 10

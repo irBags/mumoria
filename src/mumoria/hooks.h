@@ -41,9 +41,15 @@ int muPlayerMeleeDamage(int target_ac, const char *target_name, Coord_t target);
 void muTurnDone();
 // Town buildings 7-9 (store door sub-categories 107-109).
 void muEnterBuilding(int sub_category_id);
-// Only one player at a time in a store; false if it is busy.
+// The stores are shared (shops.cpp): each customer shops in their own view
+// of one. muStoreEnter makes it (false: the doors are locked to them).
 bool muStoreEnter(int store_id);
 void muStoreLeave(int store_id);
+// Before paying: false (and says so) when the shared supply has just run out.
+bool muStoreCanBuy(int store_id, Inventory_t const &item);
+void muStoreBought(int store_id, Inventory_t const &item);
+// Umoria's store turnover, for the shared stores: at most every few minutes.
+void muStoreTurnover();
 // Three more buildings in the town (Bank, Guild Hall, Auction House).
 void muPlaceTownBuildings();
 bool muWizardAllowed();

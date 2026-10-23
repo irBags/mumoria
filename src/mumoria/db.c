@@ -89,6 +89,14 @@ static const char *SCHEMA_V2 =
     "ALTER TABLE character ADD COLUMN pvp INTEGER NOT NULL DEFAULT 0;"
     "ALTER TABLE character ADD COLUMN pvp_changed_at INTEGER NOT NULL DEFAULT 0;";
 
+// The stores' shared supply of each item, and what each character has bought
+// of it since `since` (shops.cpp).
+static const char *SCHEMA_V3 =
+    "CREATE TABLE store_supply (store INTEGER NOT NULL, item TEXT NOT NULL, remaining INTEGER NOT NULL,"
+    " cap INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (store, item));"
+    "CREATE TABLE store_bought (character INTEGER NOT NULL, store INTEGER NOT NULL, item TEXT NOT NULL,"
+    " count INTEGER NOT NULL, since INTEGER NOT NULL, PRIMARY KEY (character, store, item));";
+
 static int exec(const char *sql) {
     char *err = NULL;
     if (sqlite3_exec(db, sql, NULL, NULL, &err) != SQLITE_OK) {
@@ -127,6 +135,10 @@ int mu_db_open(const char *path) {
     if (rc == 0 && version < 2) {
         // guild shields and battle turns; PvP per character, changed once a day
         rc = exec(SCHEMA_V2) != 0 || exec("PRAGMA user_version = 2") != 0;
+    }
+    if (rc == 0 && version < 3) {
+        // the stores: a shared supply, and each character's own stock
+        rc = exec(SCHEMA_V3) != 0 || exec("PRAGMA user_version = 3") != 0;
     }
     if (rc != 0) {
         exec("ROLLBACK");

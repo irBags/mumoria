@@ -659,7 +659,7 @@ static void auction_screen(MuSession *s) {
 
 // Inside a building a player is not drawn and blocks nobody (world.cpp
 // mu_player_at); the others' maps are told as they go in and come out.
-static void set_inside(MuSession *s, bool inside) {
+void mu_set_inside(MuSession *s, bool inside) {
     s->in_building = inside;
     if (s->level != nullptr) {
         mu_poke_level(s->level, s);
@@ -668,8 +668,8 @@ static void set_inside(MuSession *s, bool inside) {
 
 struct Inside {
     MuSession *s;
-    explicit Inside(MuSession *who) : s(who) { set_inside(s, true); }
-    ~Inside() { set_inside(s, false); }
+    explicit Inside(MuSession *who) : s(who) { mu_set_inside(s, true); }
+    ~Inside() { mu_set_inside(s, false); }
 };
 
 void muEnterBuilding(int sub_category_id) {
@@ -719,25 +719,6 @@ void muPlaceTownBuildings() {
         inventoryItemCopyTo(config::dungeon::objects::OBJ_STORE_DOOR, game.treasure.list[id]);
         game.treasure.list[id].sub_category_id = (uint8_t) (107 + i);
         game.treasure.list[id].sprite = (uint8_t) b[i].sprite;
-    }
-}
-
-static int64_t store_owner[MAX_STORES] = {0};
-
-bool muStoreEnter(int store_id) {
-    if (store_owner[store_id] != 0 && store_owner[store_id] != mu_self->account.id) {
-        printMessage("The shopkeeper is busy with another customer.");
-        return false;
-    }
-    store_owner[store_id] = mu_self->account.id;
-    set_inside(mu_self, true);
-    return true;
-}
-
-void muStoreLeave(int store_id) {
-    if (store_owner[store_id] == mu_self->account.id) {
-        store_owner[store_id] = 0;
-        set_inside(mu_self, false);
     }
 }
 

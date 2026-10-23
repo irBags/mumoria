@@ -2342,7 +2342,11 @@ static void playDungeon() {
 
         // turn over the store contents every, say, 1000 turns
         if (dg.current_level != 0 && dg.game_turn % 1000 == 0) {
+#ifdef MUMORIA
+            muStoreTurnover(); // the stores are shared: at most every few minutes
+#else
             storeMaintenance();
+#endif
         }
 
         // Check for creature generation

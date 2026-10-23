@@ -117,6 +117,7 @@ static bool in_level(Coord_t const &c) {
 }
 
 static void save_player(MuSession *s) {
+    mu_shops_put_away(s);
     MuPlayerCtx &c = s->ctx;
     c.py = py;
     c.game = game; // its floor items are the level's; load_player leaves them
@@ -220,6 +221,7 @@ static void show_monsters(MuSession *s, bool same_level) {
 }
 
 static void load_player(MuSession *s) {
+    mu_shops_bring_back(s);
     MuPlayerCtx &c = s->ctx;
     py = c.py;
     // everything but the floor items, which belong to the level
@@ -394,6 +396,9 @@ static MuLevel *get_level(int depth) {
         loaded_level = nullptr;
         dg.current_level = (int16_t) depth;
         generateCave();
+        if (depth == 0) {
+            mu_shops_take_catalog(); // the new town stocked its stores
+        }
         L = new MuLevel();
         L->depth = depth;
         L->created_at = now;
@@ -581,8 +586,8 @@ void mu_world_maintain(bool force_all) {
         }
         ++it;
     }
-    mu_db_run("INSERT INTO world (key, blob) VALUES ('stores', ?) ON CONFLICT(key) DO UPDATE SET blob = excluded.blob", "b", stores,
-              (int) sizeof(stores));
+    mu_db_run("INSERT INTO world (key, blob) VALUES ('stores', ?) ON CONFLICT(key) DO UPDATE SET blob = excluded.blob", "b", mu_catalog,
+              (int) sizeof(mu_catalog));
 }
 
 // --- characters ------------------------------------------------------------
@@ -694,6 +699,7 @@ void mu_world_init() {
         }
     }
     mu_db_done(r);
+    mu_shops_take_catalog();
 }
 
 void mu_world_shutdown() {

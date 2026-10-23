@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "shops.h"
 #include "world.h"
 
 #include <string>
@@ -58,6 +59,9 @@ struct MuSession {
     int pending_pvp_damage = 0; // struck by another player: applied on our turn
     std::string pvp_attacker;
     MuSession *arrive_near = nullptr; // /goto, /summon: arrive beside them
+    int store_in = -1;       // the store this player is shopping in (shops.cpp)
+    Store_t store_view{};    // their own view of it, while someone else is loaded
+    MuStoreTerms store_terms[MAX_STORES]{};
 };
 
 // The session of the calling thread.

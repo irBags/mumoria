@@ -8,7 +8,11 @@
 #include "headers.h"
 
 // Save the store's last increment value.
+#ifdef MUMORIA
+static thread_local int16_t store_last_increment; // each customer's own haggle
+#else
 static int16_t store_last_increment;
+#endif
 
 static bool storeNoNeedToBargain(Store_t const &store, int32_t min_price);
 static void storeUpdateBargainingSkills(Store_t &store, int32_t price, int32_t min_price);
@@ -119,9 +123,11 @@ static void displayStoreInventory(Store_t &store, int item_pos_start) {
         // Save the current number of items
         int32_t current_item_count = item.items_count;
 
+#ifndef MUMORIA // Mumoria shows how many are left to this customer (shops.cpp)
         if (inventoryItemSingleStackable(item)) {
             item.items_count = 1;
         }
+#endif
 
         obj_desc_t description = {'\0'};
         itemDescription(description, item, true);
@@ -835,12 +841,18 @@ static bool storePurchaseAnItem(int store_id, int &current_top_item_id) {
     if (status == BidState::Insulted) {
         kick_customer = true;
     } else if (status == BidState::Received) {
+#ifdef MUMORIA
+        if (!muStoreCanBuy(store_id, sell_item)) {
+            // others bought the last of it while this customer haggled
+        } else
+#endif
         if (py.misc.au >= price) {
             printSpeechFinishedHaggling();
             storeDecreaseInsults(store_id);
             py.misc.au -= price;
 
             int new_item_id = inventoryCarryItem(sell_item);
+            MU_ONLY(muStoreBought(store_id, sell_item);)
             int saved_store_counter = store.unique_items_counter;
 
             storeDestroyItem(store_id, item_id, true);
@@ -865,6 +877,7 @@ static bool storePurchaseAnItem(int store_id, int &current_top_item_id) {
                         store_item.cost = price;
                         displaySingleCost(store_id, item_id);
                     }
+                    MU_ONLY(displayStoreInventory(stores[store_id], current_top_item_id);) // the count left shows
                 } else {
                     displayStoreInventory(stores[store_id], item_id);
                 }
@@ -1103,7 +1116,7 @@ void storeEnter(int store_id) {
     }
 
 #ifdef MUMORIA
-    // one customer at a time: another's purchase would move the item letters
+    // every customer shops in their own view of the store (shops.cpp)
     if (!muStoreEnter(store_id)) {
         return;
     }

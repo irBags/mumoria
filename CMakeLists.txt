@@ -306,6 +306,7 @@ if (NOT WIN32)
             ${source_dir}/mumoria/screens.cpp
             ${source_dir}/mumoria/server_main.cpp
             ${source_dir}/mumoria/session.cpp
+            ${source_dir}/mumoria/shops.cpp
             ${source_dir}/mumoria/social.cpp
             ${source_dir}/mumoria/world.cpp
     )

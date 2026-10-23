@@ -12,6 +12,12 @@ guild_cost = 1000
 # 2.4 each on 50 ft, 2.5 on 100 ft, 2.6 on 150 ft.
 party_gold_per_level = 0.5
 
+# The stores' shared supply, in percent. At 100 the whole server can buy,
+# per item and per 4 hours: 300 of anything worth up to 25 gold (food,
+# torches, oil), 120 up to 100, 40 up to 500, 12 up to 2000, 4 above that.
+# Each player's own stock is a single-player store's, back after an hour.
+store_supply_percent = 100
+
 # Mirror world chat to an IRC channel: the P3OL/AOL chat rooms are IRC, so
 # members in that room talk with the players. Leave irc_host empty for none.
 irc_host =

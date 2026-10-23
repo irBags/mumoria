@@ -61,8 +61,9 @@ Nobody waits for another player's movement:
 
 Two further rules:
 
-* **Shops:** one customer at a time per shop. Another customer's purchase
-  would move the item letters.
+* **Shops:** any number of customers at once. Each shops in their own view
+  of the store, swapped in and out with their other globals (2.19), so
+  nobody's purchase moves anyone else's item letters.
 * **Leaving:** while a player who has hung up is being saved, a prompt that
   turns up answers itself instead of waiting (`MuSession::closing`).
 
@@ -438,6 +439,41 @@ steps, and what stays compatible.
     monster appears in a ring; teleporting shows where it was
 * The animations use their own random numbers, never the engine's.
 
+### 2.19 The town's stores, shared
+
+* **Why:** forty players share six shops. A shopkeeper must never be busy,
+  and one player's purchase must not empty the shelf for the rest, but the
+  town cannot hand out endless gear either.
+* **Files:** `src/mumoria/shops.cpp`, `shops.h`; hooks in `store.cpp`
+  (`muStoreEnter`, `muStoreCanBuy`, `muStoreBought`) and `game_run.cpp`
+  (`muStoreTurnover`); the swap in `world.cpp` (`save_player`,
+  `load_player`).
+* **The catalog** (`mu_catalog`) is what Umoria's six stores hold, saved in
+  `world('stores')`. Umoria's stock turnover runs on it at most every
+  `MU_STORE_TURNOVER_SECONDS` (10 minutes), however many levels are played.
+* **Each customer's view:** going in makes a copy of the store for that
+  player. While someone else is loaded it lives in `MuSession::store_view`,
+  and `stores[]` holds the catalog again. The owner's patience (insults,
+  good and bad bargains, a locked door) is kept per player for the session.
+  What a player sells stays in their own view until they leave.
+* **Their own stock:** of each line, a player can buy what Umoria's store
+  holds; of goods sold one at a time (food, oil, torches, potions, scrolls)
+  at least 10 up to 25 gold, 5 up to 100, 3 up to 500, 1 above. It comes back
+  `MU_STORE_PERSONAL_HOURS` (1) after their first purchase. Counts are shown
+  ("10 Rations of Food"), unlike single-player Umoria.
+* **The shared supply:** every purchase by anyone also comes out of the
+  store's supply of that item, which refills evenly over
+  `MU_STORE_RESTOCK_HOURS` (4). Per 4 hours: 300 of anything worth up to 25
+  gold, 120 up to 100, 40 up to 500, 12 up to 2000, 4 above, never less than
+  the store's own stack. `store_supply_percent` in `mumoria.conf` scales
+  these. When it runs out, the line is gone for everyone until it refills;
+  someone who was mid-haggle is told it has just sold out.
+* **DB (schema 3):** `store_supply(store, item, remaining, cap, updated_at)`,
+  `store_bought(character, store, item, count, since)`. An item is keyed by
+  its kind and its plusses.
+* **Doorways** never block: a player on a town door, inside or out, is
+  walked through and others go in.
+
 ## 3. Menus: drawn the way Umoria draws
 
 There are no new windows. Bank, Guild Hall, Auction House and Trade are drawn
@@ -525,6 +561,9 @@ of the following against the built server:
   refused
 * a player inside the Bank is not drawn for others, and another walks onto
   the same doorway and in
+* the shared stores (2.19): two players in the General Store at once; one
+  buys all 24 of their rations and the other still sees 24; with the supply
+  at 1 percent, the first one's purchases empty it and the other sees none
 * a party kill of a boss: the boss counted, items rolled for (each roll
   shown, the winner's pack filled), and gold split between the members
 * other players' lamps lighting their squares on your map
