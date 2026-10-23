@@ -97,6 +97,10 @@ static const char *SCHEMA_V3 =
     "CREATE TABLE store_bought (character INTEGER NOT NULL, store INTEGER NOT NULL, item TEXT NOT NULL,"
     " count INTEGER NOT NULL, since INTEGER NOT NULL, PRIMARY KEY (character, store, item));";
 
+// When each character last had each raid's own reward (raid.cpp).
+static const char *SCHEMA_V4 =
+    "CREATE TABLE raid_clear (character INTEGER NOT NULL, raid INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (character, raid));";
+
 static int exec(const char *sql) {
     char *err = NULL;
     if (sqlite3_exec(db, sql, NULL, NULL, &err) != SQLITE_OK) {
@@ -139,6 +143,9 @@ int mu_db_open(const char *path) {
     if (rc == 0 && version < 3) {
         // the stores: a shared supply, and each character's own stock
         rc = exec(SCHEMA_V3) != 0 || exec("PRAGMA user_version = 3") != 0;
+    }
+    if (rc == 0 && version < 4) {
+        rc = exec(SCHEMA_V4) != 0 || exec("PRAGMA user_version = 4") != 0; // raid rewards
     }
     if (rc != 0) {
         exec("ROLLBACK");

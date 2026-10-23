@@ -477,6 +477,46 @@ steps, and what stays compatible.
 * **Doorways** never block: a player on a town door, inside or out, is
   walked through and others go in.
 
+### 2.20 Raids
+
+* **Finding one:** on every fifth level below the town (250 ft, 500 ft,
+  750 ft...) a raid gate `0` stands somewhere. Arriving on such a level says
+  so, and names the raid. It has to be found.
+* **The gate** (a store door, sub-category 110) shows the raid: what is
+  inside, the party, and when this character's reward is next due. `e`
+  enters. A party member who steps on it later joins the party's raid.
+* **Files:** `src/mumoria/raid.cpp`, `raid.h`; instances in `world.cpp`
+  (`new_raid`, `mu_change_level`, `mu_world_maintain`); hooks in
+  `player_move.cpp` (the gate), `monster.cpp` (`muMonsterHurt`), `boss.cpp`
+  (`muMonsterDies`), `ui.cpp` (the depth line shows the raid's name).
+* **An instance** is a level made for the party at the gate when the first
+  of them goes in, at the gate's depth. It is never saved: it goes
+  `MU_RAID_EMPTY_SECONDS` (60) after the last one leaves, and a disconnect
+  leaves it. It has no stairs; the way out `0` is where the party came in
+  and leads back beside the gate. A scroll of recall, a trap door or death
+  also leave it.
+* **Inside:** packs of 3 to 6 themed monsters all through it, but not by
+  the way in (45 + 15 per member, at most 110); two captains, each with a
+  guard; and the lord, as far from the way in as can be found, with its own
+  guard. The lord has 6 + 3n times its hit points and +1 speed; captains
+  3 + n; every monster 20 percent more per member after the first. At
+  three quarters, half and a quarter of its hit points the lord calls 2 + n
+  more of its guard.
+* **The raids, by depth:** the Orc Warrens (250 ft), the Ogre Hold, the
+  Troll Caves, the Barrow Downs, the Lich Crypts, the Dragon Nests, the
+  Dragons' Deep (1750 ft and below). Each is made of certain monster
+  letters and levels, and its lord is the strongest of them.
+* **Treasure** is gear only (arms, armour, rings, amulets, staves, wands),
+  each piece the most valuable of several rolls. Captains drop 2 pieces
+  rolled at the depth + 12; the lord 3 + n at the depth + 18, which the party
+  rolls for as usual. Then every player inside gets a reward of their own,
+  into their pack: the best of 5 rolled at the depth + 25, and gold, once
+  per raid every `MU_RAID_LOCKOUT_HOURS` (12, table `raid_clear`). The world
+  is told.
+* **Admin:** `/raid` goes into the level's raid at once; `/raid lord` goes
+  beside its lord.
+* **DB (schema 4):** `raid_clear(character, raid, at)`.
+
 ## 3. Menus: drawn the way Umoria draws
 
 There are no new windows. Bank, Guild Hall, Auction House and Trade are drawn
@@ -564,6 +604,11 @@ of the following against the built server:
   refused
 * a player inside the Bank is not drawn for others, and another walks onto
   the same doorway and in
+* a raid (2.20): two in a party go in, the depth line names it, packs and
+  the lord's guarded lair are there, the lord calls its guard as it weakens,
+  and its death (weakened for the test) rolls its hoard, gives both their own
+  reward and tells the world; the way out leads back beside the gate, whose
+  screen shows the raid
 * the shared stores (2.19): two players in the General Store at once; one
   buys all 24 of their rations and the other still sees 24; with the supply
   at 1 percent, the first one's purchases empty it and the other sees none

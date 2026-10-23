@@ -248,6 +248,12 @@ void printCharacterCurrentDepth() {
 
     int depth = dg.current_level * 50;
 
+#ifdef MUMORIA
+    const char *raid = muRaidName();
+    if (raid != nullptr) {
+        (void) snprintf(depths, MORIA_MESSAGE_SIZE, "%s", raid);
+    } else
+#endif
     if (depth == 0) {
         (void) strcpy(depths, "Town level");
     } else {

@@ -243,6 +243,8 @@ enum class TrapTypes {
     Bank,         // 107: Mumoria's town buildings 7, 8, 9
     GuildHall,
     AuctionHouse,
+    RaidGate,     // 110: a raid gate in the dungeon, and a raid's way out
+    RaidExit,
 #endif
 };
 
@@ -338,6 +340,10 @@ static void playerStepsOnTrap(Coord_t coord) {
         case TrapTypes::GuildHall:
         case TrapTypes::AuctionHouse:
             muEnterBuilding((int) item.sub_category_id);
+            break;
+        case TrapTypes::RaidGate:
+        case TrapTypes::RaidExit:
+            muRaidGate((int) item.sub_category_id);
             break;
 #endif
 

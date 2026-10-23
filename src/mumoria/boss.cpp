@@ -9,6 +9,7 @@
 #include "boss.h"
 
 #include "mu_config.h"
+#include "raid.h"
 #include "session.h"
 #include "social.h"
 
@@ -170,8 +171,14 @@ static void boss_dies(int monster_id) {
 void muMonsterDies(int monster_id, int treasure_before) {
     Monster_t &m = monsters[monster_id];
     Coord_t center{m.pos.y, m.pos.x};
-    if (m.mu_boss != 0) {
+    bool lord = m.mu_boss == 3;
+    if (m.mu_boss == 1) {
         boss_dies(monster_id);
+    } else if (m.mu_boss >= 2) {
+        mu_raid_monster_dies(monster_id); // raid.cpp
     }
     mu_loot_rolls(treasure_before, center);
+    if (lord) {
+        mu_raid_rewards(center); // after the rolls: nobody else rolls for a reward left on the floor
+    }
 }

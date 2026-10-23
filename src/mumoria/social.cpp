@@ -4,6 +4,7 @@
 // reached from muCommand, inside the engine). Chat lines go to the chat pane
 // under Umoria's screen (vterm.c), which any thread may write.
 
+#include "raid.h"
 #include "social.h"
 
 #include "boss.h"
@@ -1125,6 +1126,9 @@ static bool moderate(MuSession *s, const std::string &cmd, const std::vector<std
         mu_shutdown_at = now + minutes * 60;
         mu_system_all("*** The server will shut down in " + std::to_string(minutes) + " minutes. ***");
         mu_db_audit(s->account.name, "shutdown", "", std::to_string(minutes).c_str());
+    } else if (cmd == "raid" && role >= 2) {
+        say(s, mu_raid_admin(s, arg));
+        mu_db_audit(s->account.name, "raid", std::to_string(s->level->depth).c_str(), arg.c_str());
     } else if (cmd == "spawnboss" && role >= 2) {
         say(s, mu_boss_spawn_beside(s->level) ? "A boss appears beside you." : "No boss here (not in the town, and only beside open floor).");
         mu_db_audit(s->account.name, "spawnboss", std::to_string(s->level->depth).c_str(), "");
@@ -1164,12 +1168,13 @@ static void help(MuSession *s) {
         "                      motd rank shield turns members disband",
         "",
         "  Town buildings: 7 Bank, 8 Guild Hall, 9 Auction House",
+        "  Raids: a raid gate 0 on every fifth level (250 ft, 500 ft...); bring a party",
     };
     if (s->account.role >= 1) {
         lines.push_back("  Moderator: /kick /mute /goto /inspect");
     }
     if (s->account.role >= 2) {
-        lines.push_back("  Admin: /ban /unban /role /broadcast /summon /spawnboss");
+        lines.push_back("  Admin: /ban /unban /role /broadcast /summon /spawnboss /raid [lord]");
         lines.push_back("         /save /shutdown /resetlevel, wizard mode ^W");
     }
     MuSafePrompt safe;

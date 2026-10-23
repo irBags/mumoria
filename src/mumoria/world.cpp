@@ -4,6 +4,7 @@
 
 #include "auth.h"
 #include "boss.h"
+#include "raid.h"
 #include "mu_config.h"
 #include "session.h"
 #include "social.h"
@@ -467,8 +468,34 @@ static void fresh_townspeople() {
     monsterPlaceNewWithinDistance(night ? config::monsters::MON_MIN_TOWNSFOLK_NIGHT : config::monsters::MON_MIN_TOWNSFOLK_DAY, 3, true);
 }
 
+static std::vector<MuLevel *> raids; // raid instances: never saved
+
+// A new level made for a raid from the gate on `gate` (raid.cpp fills it).
+static MuLevel *new_raid(int gate, int party) {
+    if (loaded_level != nullptr) {
+        save_level(loaded_level);
+    }
+    loaded_level = nullptr;
+    dg.current_level = (int16_t) gate;
+    generateCave();
+    auto *L = new MuLevel();
+    L->depth = gate;
+    L->created_at = time(nullptr);
+    loaded_level = L;
+    L->raid = mu_raid_build(gate, party);
+    save_level(L);
+    raids.push_back(L);
+    return L;
+}
+
+static void enter_level(MuSession *s, MuLevel *L);
+
 void mu_enter_game(MuSession *s, int depth) {
-    MuLevel *L = get_level(depth);
+    enter_level(s, get_level(depth));
+}
+
+static void enter_level(MuSession *s, MuLevel *L) {
+    int depth = L->depth;
     if (loaded_level != L) {
         if (loaded_level != nullptr) {
             save_level(loaded_level);
@@ -500,9 +527,18 @@ void mu_enter_game(MuSession *s, int depth) {
     if (depth == 0 && L->players.empty()) {
         fresh_townspeople();
     }
+    mu_raid_place_gate(L);
+    Coord_t gate;
+    if (L->raid != nullptr) {
+        py.pos = L->raid->entry; // in through the gate
+    } else if (s->to_gate && mu_raid_find_gate(gate)) {
+        py.pos = gate; // back out of a raid
+        s->arrive_near = nullptr;
+    }
+    s->to_gate = false;
     // below the town a party arrives together: beside a member already there.
     // Anyone else drops in at random.
-    if (s->arrive_near == nullptr && depth > 0 && s->party != nullptr) {
+    if (s->arrive_near == nullptr && depth > 0 && s->party != nullptr && L->raid == nullptr && py.pos.y < 0) {
         for (MuSession *m : s->party->members) {
             if (m != s && m->level == L && !m->in_building) {
                 s->arrive_near = m;
@@ -513,9 +549,13 @@ void mu_enter_game(MuSession *s, int depth) {
     if (s->arrive_near != nullptr && s->arrive_near->level == L) {
         py.pos = s->arrive_near->ctx.py.pos;
     }
+    Coord_t door = py.pos; // the gate or way out they arrive by, if any
     s->arrive_near = nullptr;
     muFindSpot(py.pos);
     dg.floor[py.pos.y][py.pos.x].creature_id = 1;
+    if (door.y > 0 && dg.floor[door.y][door.x].treasure_id != 0) {
+        dg.floor[door.y][door.x].field_mark = true; // they know where it is
+    }
 
     s->level = L;
     mu_vt_fx_clear(mu_screen_of(s)); // the last level's animations
@@ -531,7 +571,10 @@ void mu_enter_game(MuSession *s, int depth) {
         mu_players.push_back(s);
     }
     s->in_game = true;
-    mu_boss_announce(s, L);
+    if (L->raid == nullptr) {
+        mu_boss_announce(s, L);
+    }
+    mu_raid_announce(s, L);
     mu_poke_level(L, s);
 }
 
@@ -559,6 +602,19 @@ static void leave_level(MuSession *s) {
 }
 
 void mu_change_level(MuSession *s) {
+    if (s->pending_raid >= 0) {
+        // through a raid gate: into the party's raid, or a new one made for
+        // the members standing at the gate
+        int gate = s->pending_raid;
+        s->pending_raid = -1;
+        int party = mu_raid_party_here(s);
+        MuLevel *raid = mu_raid_of_party(s, gate);
+        dg.current_level = (int16_t) s->level->depth;
+        leave_level(s);
+        enter_level(s, raid != nullptr ? raid : new_raid(gate, party));
+        mu_char_store(s);
+        return;
+    }
     int new_depth = s->pending_depth >= 0 ? s->pending_depth : dg.current_level;
     s->pending_depth = -1;
     dg.current_level = (int16_t) s->level->depth;
@@ -579,6 +635,19 @@ void mu_leave_game(MuSession *s) {
 
 void mu_world_maintain(bool force_all) {
     time_t now = time(nullptr);
+    for (auto it = raids.begin(); it != raids.end();) {
+        MuLevel *L = *it;
+        if (L->players.empty() && L->empty_since != 0 && now - L->empty_since >= MU_RAID_EMPTY_SECONDS) {
+            if (L == loaded_level) {
+                loaded_level = nullptr;
+            }
+            delete L->raid;
+            delete L;
+            it = raids.erase(it);
+            continue;
+        }
+        ++it;
+    }
     for (auto it = levels.begin(); it != levels.end();) {
         MuLevel *L = it->second;
         if (L == loaded_level) {
@@ -729,6 +798,10 @@ const char *mu_depth_name(int depth, char *buf, size_t max) {
 }
 
 // --- engine hooks about other players ------------------------------------------
+
+MuLevel *mu_level_loaded() {
+    return loaded_level;
+}
 
 MuScreen *mu_screen_of(MuSession *s) {
     return &s->conn->screen;

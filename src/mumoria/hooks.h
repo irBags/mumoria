@@ -93,6 +93,13 @@ struct MuFxTogether {
 void muMapPanel(bool begin);
 void muMapTile(bool begin);
 
+// Raids (raid.cpp): a raid gate (110) or a raid's way out (111) stepped on.
+void muRaidGate(int sub_category_id);
+// A monster was hurt and lives (a raid's lord calls its guard).
+void muMonsterHurt(int monster_id);
+// The loaded level's raid, for the depth line; null when not in one.
+const char *muRaidName();
+
 // While one of these is alive, a prompt does not hold the player's level:
 // it is a menu or a question before anything has changed.
 struct MuSafePrompt {

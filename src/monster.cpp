@@ -1409,6 +1409,7 @@ int monsterTakeHit(int monster_id, int damage) {
     monster.hp -= damage;
 
     if (monster.hp >= 0) {
+        MU_ONLY(muMonsterHurt(monster_id);)
         return -1;
     }
 

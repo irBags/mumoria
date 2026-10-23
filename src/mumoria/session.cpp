@@ -5,6 +5,7 @@
 
 #include "auth.h"
 #include "mu_config.h"
+#include "raid.h"
 #include "social.h"
 
 #include <sched.h>
@@ -626,7 +627,7 @@ static void record_death(MuSession *s) {
     char where[32], line[160];
     snprintf(line, sizeof(line), "%s the level %d %s %s %s at %s.", s->char_name.c_str(), py.misc.level, classes[py.misc.class_id].title,
              game.total_winner ? "has" : "was killed by", game.total_winner ? "won" : game.character_died_from,
-             mu_depth_name(depth, where, sizeof(where)));
+             mu_raid_title(s->level) != nullptr ? mu_raid_title(s->level) : mu_depth_name(depth, where, sizeof(where)));
     mu_system_all(line);
     fprintf(stderr, "mumoria: %s\n", line);
 }

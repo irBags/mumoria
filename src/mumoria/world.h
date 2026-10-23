@@ -17,6 +17,7 @@
 #include <vector>
 
 struct MuSession;
+struct MuRaid;
 
 struct MuPlayerCtx {
     Player_t py{};
@@ -61,6 +62,7 @@ struct MuLevel {
     time_t created_at = 0, saved_at = 0, empty_since = 0;
     time_t boss_dead_at = 0;
     bool dirty = false;
+    MuRaid *raid = nullptr; // a raid instance (raid.cpp): never saved
 };
 
 // Thrown to end a session from deep inside the engine.
@@ -87,6 +89,7 @@ void mu_world_unlock(MuSession *s, bool hold_level);
 // The engine draws on the thread's screen: fn draws on other's.
 template <typename F> void mu_with_player(MuSession *self, MuSession *other, F fn);
 MuScreen *mu_screen_of(MuSession *s);
+MuLevel *mu_level_loaded(); // the level the globals hold
 // Another player standing on coord, drawn and in the way (not in a building).
 MuSession *mu_player_at(Coord_t const &coord);
 void mu_swap_in(MuSession *s);

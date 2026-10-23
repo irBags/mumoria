@@ -33,3 +33,7 @@
 #define MU_BOSS_INTERVAL 2
 #define MU_BOSS_RESPAWN_HOURS 2
 #define MU_BOSS_TIER_CAP 10
+
+#define MU_RAID_INTERVAL 5        // a raid gate on every fifth level
+#define MU_RAID_LOCKOUT_HOURS 12  // a raid's own reward, once per character this often
+#define MU_RAID_EMPTY_SECONDS 60  // an empty raid is gone this long after the last one left
