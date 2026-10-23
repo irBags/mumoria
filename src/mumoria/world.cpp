@@ -6,6 +6,7 @@
 #include "boss.h"
 #include "mu_config.h"
 #include "session.h"
+#include "social.h"
 
 #include <map>
 #include <pthread.h>
@@ -498,6 +499,16 @@ void mu_enter_game(MuSession *s, int depth) {
     py.pos = Coord_t{-1, -1};
     if (depth == 0 && L->players.empty()) {
         fresh_townspeople();
+    }
+    // below the town a party arrives together: beside a member already there.
+    // Anyone else drops in at random.
+    if (s->arrive_near == nullptr && depth > 0 && s->party != nullptr) {
+        for (MuSession *m : s->party->members) {
+            if (m != s && m->level == L && !m->in_building) {
+                s->arrive_near = m;
+                break;
+            }
+        }
     }
     if (s->arrive_near != nullptr && s->arrive_near->level == L) {
         py.pos = s->arrive_near->ctx.py.pos;

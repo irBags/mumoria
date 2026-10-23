@@ -212,6 +212,9 @@ steps, and what stays compatible.
   `/leave`, `/kick`, `/p`).
 * **DB:** none. Parties live for as long as the session does, as in the python
   port.
+* **Arriving together:** below the town, a member who comes onto a level
+  where another member already is arrives beside them (`mu_enter_game`).
+  Anyone not in a party drops in at random, as Umoria does.
 * **Rules (from the python port):** five members at most. A kill shares its
   experience between the members on that level, at
   `exp * (100 + 6n) / (100n)` each.
