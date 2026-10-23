@@ -222,8 +222,8 @@ void panelMoveCursor(Coord_t coord) {
 // sign bit of a character used to indicate standout mode. -CJS
 void panelPutTile(char ch, Coord_t coord) {
 #ifdef MUMORIA
-    // players: class colour, bold, on their shield (colour.cpp)
-    mu_vt_set_attr(mu_vt_current, ch == '@' ? muTileAttr(coord) : 0);
+    // players: class colour, bold, on their shield; rare items glow (colour.cpp)
+    mu_vt_set_attr(mu_vt_current, muTileAttr(coord, ch));
     muMapTile(true);
 #endif
     // Real coords convert to screen positions

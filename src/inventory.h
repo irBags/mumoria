@@ -40,7 +40,15 @@ constexpr uint8_t INSCRIP_SIZE = 13;
 typedef struct {
     uint16_t id;                    // Index to object_list
     uint8_t special_name_id;        // Object special name
+#ifdef MUMORIA
+    // The inscription's last byte was always its terminator: the item's
+    // rarity lives there instead (mumoria/loot.h), so the layout (and every
+    // saved level and store) stays the same.
+    char inscription[INSCRIP_SIZE - 1];
+    uint8_t mu_rarity;
+#else
     char inscription[INSCRIP_SIZE]; // Object inscription
+#endif
     uint32_t flags;                 // Special flags
     uint8_t category_id;            // Category number (tval)
     uint8_t sprite;                 // Character representation - ASCII symbol (tchar)

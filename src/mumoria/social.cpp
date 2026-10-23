@@ -4,6 +4,7 @@
 // reached from muCommand, inside the engine). Chat lines go to the chat pane
 // under Umoria's screen (vterm.c), which any thread may write.
 
+#include "loot.h"
 #include "raid.h"
 #include "social.h"
 
@@ -1129,6 +1130,9 @@ static bool moderate(MuSession *s, const std::string &cmd, const std::vector<std
     } else if (cmd == "raid" && role >= 2) {
         say(s, mu_raid_admin(s, arg));
         mu_db_audit(s->account.name, "raid", std::to_string(s->level->depth).c_str(), arg.c_str());
+    } else if (cmd == "makeloot" && role >= 2) {
+        say(s, mu_loot_admin(s, lower(arg)));
+        mu_db_audit(s->account.name, "makeloot", std::to_string(s->level->depth).c_str(), arg.c_str());
     } else if (cmd == "spawnboss" && role >= 2) {
         say(s, mu_boss_spawn_beside(s->level) ? "A boss appears beside you." : "No boss here (not in the town, and only beside open floor).");
         mu_db_audit(s->account.name, "spawnboss", std::to_string(s->level->depth).c_str(), "");
@@ -1151,7 +1155,6 @@ static bool moderate(MuSession *s, const std::string &cmd, const std::vector<std
 static void help(MuSession *s) {
     std::vector<std::string> lines = {
         "Mumoria commands",
-        "",
         "  '  then text        talk to everyone on your level",
         "  '  then /w text     world chat (also heard in the AOL chat room)",
         "  '  then /g text     guild chat         /p text   party chat",
@@ -1166,6 +1169,8 @@ static void help(MuSession *s) {
         "  /pvp [on|off]       player fighting; changed once a day",
         "  /guild ...          create join leave invite kick promote demote",
         "                      motd rank shield turns members disband",
+        "  /loot  /legends     your rare finds; the latest Epic and Legendary ones",
+        "  /item a, /item worn an item's rarity, the level it needs, its powers",
         "",
         "  Town buildings: 7 Bank, 8 Guild Hall, 9 Auction House",
         "  Raids: a raid gate 0 on every fifth level (250 ft, 500 ft...); bring a party",
@@ -1174,7 +1179,7 @@ static void help(MuSession *s) {
         lines.push_back("  Moderator: /kick /mute /goto /inspect");
     }
     if (s->account.role >= 2) {
-        lines.push_back("  Admin: /ban /unban /role /broadcast /summon /spawnboss /raid [lord]");
+        lines.push_back("  Admin: /ban /unban /role /broadcast /summon /spawnboss /raid [lord] /makeloot");
         lines.push_back("         /save /shutdown /resetlevel, wizard mode ^W");
     }
     MuSafePrompt safe;
@@ -1259,6 +1264,8 @@ void mu_social_command(MuSession *s, const std::string &line) {
         mu_trade_request(s, rest);
     } else if (cmd == "help" || cmd == "?") {
         help(s);
+    } else if (mu_loot_command(s, cmd, rest)) {
+        // loot.cpp: /loot /legends /item
     } else if (!moderate(s, cmd, w)) {
         say(s, "Unknown command. /help lists them.");
     }

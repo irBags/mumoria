@@ -857,6 +857,9 @@ void itemDescription(obj_desc_t description, Inventory_t const &item, bool add_p
         (void) strcat(description, tmp_val);
     }
 
+#ifdef MUMORIA
+    muItemRarityTag(item, description); // " <Epic>"
+#endif
     (void) strcat(description, ".");
 }
 
@@ -917,9 +920,15 @@ void itemInscribe() {
     }
 
     int msg_len = 78 - (int) strlen(msg);
+#ifdef MUMORIA
+    if (msg_len > INSCRIP_SIZE - 2) {
+        msg_len = INSCRIP_SIZE - 2; // the last byte holds the rarity
+    }
+#else
     if (msg_len > 12) {
         msg_len = 12;
     }
+#endif
 
     putStringClearToEOL(inscription, Coord_t{0, 0});
 

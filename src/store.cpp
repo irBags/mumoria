@@ -137,7 +137,9 @@ static void displayStoreInventory(Store_t &store, int item_pos_start) {
 
         obj_desc_t msg = {'\0'};
         (void) snprintf(msg, MORIA_OBJ_DESC_SIZE, "%c) %s", 'a' + item_line_num, description);
+        MU_ONLY(muItemColour(&item);)
         putStringClearToEOL(msg, Coord_t{item_line_num + 5, 0});
+        MU_ONLY(muItemColour(nullptr);)
 
         current_item_count = store.inventory[item_pos_start].cost;
 

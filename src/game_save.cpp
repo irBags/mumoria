@@ -1011,7 +1011,12 @@ static void wrShorts(uint16_t *value, int count) {
 
 static void wrItem(Inventory_t &item) {
     DEBUG(fprintf(logfile, "ITEM:\n"))
+#ifdef MUMORIA
+    // object ids are below 0x1000: the rarity rides in the top four bits
+    wrShort((uint16_t) (item.id | ((item.mu_rarity & 0x0F) << 12)));
+#else
     wrShort(item.id);
+#endif
     wrByte(item.special_name_id);
     wrString(item.inscription);
     wrLong(item.flags);
@@ -1139,6 +1144,11 @@ static void rdItem(Inventory_t &item) {
     item.id = rdShort();
     item.special_name_id = rdByte();
     rdString(item.inscription);
+#ifdef MUMORIA
+    item.inscription[INSCRIP_SIZE - 2] = '\0';
+    item.mu_rarity = (uint8_t) (item.id >> 12);
+    item.id &= 0x0FFF;
+#endif
     item.flags = rdLong();
     item.category_id = rdByte();
     item.sprite = rdByte();

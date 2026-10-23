@@ -261,6 +261,7 @@ bool inventoryCanCarryItem(Inventory_t const &item) {
 // item position for a description if needed. -RAK-
 // this code must be identical to the inventoryCanCarryItemCount() code above
 int inventoryCarryItem(Inventory_t &new_item) {
+    MU_ONLY(muItemCarried(new_item);)
     bool is_known = itemSetColorlessAsIdentified(new_item.category_id, new_item.sub_category_id, new_item.identification);
     bool is_always_known = objectPositionOffset(new_item.category_id, new_item.sub_category_id) == -1;
 
@@ -339,6 +340,9 @@ void inventoryItemCopyTo(int from_item_id, Inventory_t &to_item) {
     to_item.id = (uint16_t) from_item_id;
     to_item.special_name_id = SpecialNameIds::SN_NULL;
     to_item.inscription[0] = '\0';
+#ifdef MUMORIA
+    to_item.mu_rarity = 0;
+#endif
     to_item.flags = from.flags;
     to_item.category_id = from.category_id;
     to_item.sprite = from.sprite;

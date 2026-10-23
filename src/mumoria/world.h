@@ -90,6 +90,7 @@ void mu_world_unlock(MuSession *s, bool hold_level);
 template <typename F> void mu_with_player(MuSession *self, MuSession *other, F fn);
 MuScreen *mu_screen_of(MuSession *s);
 MuLevel *mu_level_loaded(); // the level the globals hold
+MuSession *mu_player_loaded(); // the player the globals hold (py)
 // Another player standing on coord, drawn and in the way (not in a building).
 MuSession *mu_player_at(Coord_t const &coord);
 void mu_swap_in(MuSession *s);

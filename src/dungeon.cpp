@@ -290,6 +290,7 @@ void dungeonPlaceRandomObjectAt(Coord_t const &coord, bool must_be_small) {
     inventoryItemCopyTo(sorted_objects[object_id], game.treasure.list[free_treasure_id]);
 
     magicTreasureMagicalAbility(free_treasure_id, dg.current_level);
+    MU_ONLY(muFloorItem(coord, free_treasure_id);)
 
     if (dg.floor[coord.y][coord.x].creature_id == 1) {
         printMessage("You feel something roll beneath your feet."); // -CJS-

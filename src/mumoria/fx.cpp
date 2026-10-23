@@ -334,6 +334,32 @@ void muFxHeal(Coord_t at) {
     a.play();
 }
 
+// A rare item: its square pulses in the tier's colour under a column of light
+// (taller the rarer), and a Legendary one throws sparks all around.
+void muFxLoot(Coord_t at, int tier) {
+    static const int COLOUR[] = {250, 40, 33, 135, 208}; // loot.cpp's TIERS
+    int colour = COLOUR[tier >= 0 && tier <= 4 ? tier : 0];
+    int height = tier >= 4 ? 4 : tier >= 3 ? 3 : 2;
+    Anim a;
+    for (int f = 0; f < 6; f++) {
+        a.put(f * FRAME_MS, FRAME_MS, at, MU_FX_TINT, f % 2 == 0 ? on(colour, 231) : on(colour, 16));
+        for (int k = 1; k <= height; k++) {
+            Coord_t c{at.y - k, at.x};
+            if (!empty(c)) {
+                break;
+            }
+            if (f >= k - 1) {
+                a.put(f * FRAME_MS, FRAME_MS, c, k == height ? '*' : '|', fg(colour));
+            }
+        }
+    }
+    if (tier >= 4) {
+        around(a, 2 * FRAME_MS, 2 * FRAME_MS, at, true, '*', fg(colour));
+        around(a, 4 * FRAME_MS, 2 * FRAME_MS, at, false, '+', fg(colour));
+    }
+    a.play();
+}
+
 void muFxRay(Coord_t from, int direction, Coord_t end, int element, int outcome, char glyph) {
     Palette const &p = pal(element);
     Coord_t d = dir_vec(direction);

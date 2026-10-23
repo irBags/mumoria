@@ -63,7 +63,24 @@ enum SpecialNameIds {
     SN_DISARMED,
     SN_UNLOCKED,
     SN_SLAY_ANIMAL,
-    SN_ARRAY_SIZE, // 56th item (size value for arrays)
+    // Mumoria's epic (SN_VALOUR..SN_SHADOWS) and legendary (SN_VALAR..) names, mumoria/loot.cpp
+    SN_VALOUR,
+    SN_CHAMPION,
+    SN_FURY,
+    SN_BEAR,
+    SN_EAGLE,
+    SN_WARDING,
+    SN_HUNT,
+    SN_SHADOWS,
+    SN_VALAR,
+    SN_ELDAR,
+    SN_GONDOLIN,
+    SN_NUMENOR,
+    SN_DURIN,
+    SN_FEANOR,
+    SN_EARENDIL,
+    SN_AINUR,
+    SN_ARRAY_SIZE, // 72nd item (size value for arrays)
 };
 
 constexpr uint8_t MAX_COLORS = 49;     // Used with potions

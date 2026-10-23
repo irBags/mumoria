@@ -37,3 +37,9 @@
 #define MU_RAID_INTERVAL 5        // a raid gate on every fifth level
 #define MU_RAID_LOCKOUT_HOURS 12  // a raid's own reward, once per character this often
 #define MU_RAID_EMPTY_SECONDS 60  // an empty raid is gone this long after the last one left
+
+// Loot rarity (loot.cpp): the character level each tier needs to be worn
+#define MU_LOOT_RARE_LEVEL 5
+#define MU_LOOT_EPIC_LEVEL 15
+#define MU_LOOT_LEGENDARY_LEVEL 25
+#define MU_LOOT_GREY_LEVELS 10 // a monster this many levels below its killer drops nothing rare

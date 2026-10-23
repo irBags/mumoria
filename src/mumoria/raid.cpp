@@ -11,6 +11,7 @@
 
 #include "raid.h"
 
+#include "loot.h"
 #include "mu_config.h"
 #include "session.h"
 #include "social.h"
@@ -250,6 +251,13 @@ void rewards(MuSession *s, MuRaid const &raid, Coord_t const &center) {
         int id = popt();
         dg.floor[c.y][c.x].treasure_id = (uint8_t) id;
         make_item(id, raid.gate + 25, 5);
+        // Rare at least; a character's first raid reward of the day, Epic at least
+        bool daily = mu_db_int("SELECT daily_reward_at FROM character WHERE id = ?", 0, "i", p->char_id) / 86400 != now / 86400;
+        mu_loot_bless(game.treasure.list[id], MU_LOOT_REWARD, raid.gate, raid.gate, p, daily ? MU_EPIC : MU_RARE);
+        if (daily) {
+            mu_db_run("UPDATE character SET daily_reward_at = ? WHERE id = ?", "ii", now, p->char_id);
+            mu_system(p, "[Daily] Your first raid reward today: Epic or better.");
+        }
         Inventory_t item = game.treasure.list[id];
         int32_t gold = 150 * (raid.theme + 1) + randomNumber(150 * (raid.theme + 1));
 

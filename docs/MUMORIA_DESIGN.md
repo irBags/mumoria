@@ -516,6 +516,63 @@ steps, and what stays compatible.
 * **Admin:** `/raid` goes into the level's raid at once; `/raid lord` goes
   beside its lord.
 * **DB (schema 4):** `raid_clear(character, raid, at)`.
+* **Rarity:** raid treasure is rolled for rarity like all loot (2.21):
+  captains and rewards Rare or better, the lord's first piece Epic or
+  better, and a character's first raid reward of each day Epic or better.
+
+### 2.21 Loot rarity
+
+* **Tiers:** gear (arms, armour, rings, amulets, staves, wands; not
+  ammunition or lights, and never a base item that is always cursed) is
+  Common, Uncommon (green), Rare (blue), Epic (purple) or Legendary
+  (orange). The tier is rolled once, when the item appears, and kept
+  forever. Its description ends in `<Epic>` and so on; lists (pack,
+  equipment, store) show the line in its colour; on the map a Rare or
+  better item glows and is seen even in the dark.
+* **The odds** (in 100000, `ODDS` in `loot.cpp`): from the floor or a
+  monster, Legendary 10-20, Epic 150-300, Rare 2000-3000, Uncommon about
+  10000, all but Uncommon growing 4 percent per item level. A monster above
+  its killer's level gives up to twice that, one below down to half, and
+  one `MU_LOOT_GREY_LEVELS` (10) or more below gives nothing better than
+  Uncommon. A level boss, raid captain, raid lord or raid reward is always
+  Rare or better: Epic 20 to 45 percent, Legendary 1 to 4 percent.
+* **Bad luck:** each boss or raid roll without an Epic adds 3 percent to
+  the next one's Epic chance (at most 45), and without a Legendary 0.3
+  percent (at most 15); a hit resets it. Per character (`/loot` shows it).
+* **What a tier does:** the curse and any bad name go; to-hit and damage
+  (arms) or armour class grow with the tier and the item level; rings and
+  amulets get more of their bonus; staves and wands more charges. Rare
+  adds one power (a resistance, free action, see invisible, regeneration;
+  on arms also slays and brands), Epic two, Legendary three. Epic and
+  Legendary arms and armour gain a stat bonus (Legendary: two stats, or
+  one in five times +1 speed), a name (Epic "of Valour", "of the
+  Champion"...; Legendary "of the Valar", "of Gondolin"...), a bigger die
+  (Epic +1 side, Legendary +1 die; a Legendary bow +1 multiplier), and are
+  worth far more. The name and the bonuses show once identified.
+* **Levels:** wearing a Rare item needs character level 5, Epic 15,
+  Legendary 25 (`mu_config.h`). Anyone can carry, trade or sell one.
+* **Finding one:** the first time a Rare or better item goes into a pack
+  (picked up, won in a roll, a raid reward), it is logged. An Epic is told
+  to the party and the level, a Legendary to the whole server, with a glow
+  animation (`muFxLoot`). A drop of Epic or better tells the level.
+* **Commands:** `/loot` (your finds, your luck, your last six),
+  `/legends` (the server's last ten Epic and Legendary finds), `/item a`
+  and `/item worn` (an item's tier, the level it needs, its powers once
+  identified). Admin `/makeloot <tier>` puts an item of that tier beside
+  you (audited), for testing.
+* **Stored:** `Inventory_t::mu_rarity` (MUMORIA only) takes the last byte
+  of the inscription, which was always its terminator: the struct keeps its
+  size and layout, so saved levels, stores, the bank and the auction house
+  load unchanged (inscriptions are now at most 11 characters). Character
+  saves carry it in the top four bits of the item's object id (ids are
+  below 0x1000; old saves read as Common). Bit 0x08 marks it as told.
+* **Files:** `src/mumoria/loot.cpp`, `loot.h`; hooks in `dungeon.cpp`
+  (floor items), `monster.cpp` (drops), `inventory.cpp` (into a pack),
+  `ui_inventory.cpp` and `store.cpp` (colours, the level to wear),
+  `identification.cpp` (the tag), `ui_io.cpp` / `colour.cpp` (the map);
+  names in `identification.h` / `data_treasure.cpp`.
+* **DB (schema 5):** `character.epic_drought`, `legend_drought`,
+  `daily_reward_at`; `loot_log(character, name, tier, item, depth, at)`.
 
 ## 3. Menus: drawn the way Umoria draws
 
@@ -628,6 +685,14 @@ of the following against the built server:
   fist blows and misses beside the target, a dagger's slashes on monsters
   and a critical in PvP; monsters' hits, bites, claws, gazes, crawls,
   touches, spores and misses on a player; none drawn over an open pack list
+* loot rarity (2.21): a level boss's drops rolled Rare and Epic (the level
+  told of the Epics), glowing blue in a dark corridor; `/makeloot` items of
+  every tier glow in their colours; picked up, the pack lines show the tag
+  in the tier's colour; a Legendary is told to the world, logged, and shown
+  by `/loot` and `/legends`; identified, `/item` lists its name, bonuses and
+  powers; a level 1 player is refused a Legendary ("must be level 25"); the
+  tiers survive a disconnect and a fresh login. Not tested: a raid reward's
+  daily Epic, the bad-luck counter reaching an Epic
 
 ## 6. Not done yet
 

@@ -71,11 +71,14 @@ int displayInventoryItems(int itemIdStart, int itemIdEnd, bool weighted, int col
 
         // don't need first two spaces if in first column
         if (column == 0) {
+            MU_ONLY(muItemColour(&py.inventory[i]);)
             putStringClearToEOL(descriptions[i], Coord_t{currentLine, column});
         } else {
             putString("  ", Coord_t{currentLine, column});
+            MU_ONLY(muItemColour(&py.inventory[i]);)
             putStringClearToEOL(descriptions[i], Coord_t{currentLine, column + 2});
         }
+        MU_ONLY(muItemColour(nullptr);)
 
         if (weighted) {
             obj_desc_t text = {'\0'};
@@ -214,11 +217,14 @@ int displayEquipment(bool showWeights, int column) {
 
         // don't need first two spaces when using whole screen
         if (column == 0) {
+            MU_ONLY(muItemColour(&py.inventory[i]);)
             putStringClearToEOL(descriptions[line], Coord_t{line + 1, column});
         } else {
             putString("  ", Coord_t{line + 1, column});
+            MU_ONLY(muItemColour(&py.inventory[i]);)
             putStringClearToEOL(descriptions[line], Coord_t{line + 1, column + 2});
         }
+        MU_ONLY(muItemColour(nullptr);)
 
         if (showWeights) {
             obj_desc_t text = {'\0'};
@@ -701,6 +707,12 @@ static void executeWearItemCommand(int itemId, const char *which, const char *pr
     if ((isupper((int) *which) != 0) && !verifyAction((char *) prompt, itemId)) {
         itemId = -1;
     } else {
+#ifdef MUMORIA
+        if (!muCanWear(py.inventory[itemId])) {
+            itemId = -1;
+            return;
+        }
+#endif
         slot = inventoryGetSlotToWearEquipment(py.inventory[itemId].category_id);
         if (slot == -1) {
             itemId = -1;

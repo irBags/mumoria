@@ -101,6 +101,17 @@ static const char *SCHEMA_V3 =
 static const char *SCHEMA_V4 =
     "CREATE TABLE raid_clear (character INTEGER NOT NULL, raid INTEGER NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (character, raid));";
 
+// Loot rarity (loot.cpp): each character's bad luck on boss and raid rolls,
+// their daily raid bonus, and every Rare or better find.
+static const char *SCHEMA_V5 =
+    "ALTER TABLE character ADD COLUMN epic_drought INTEGER NOT NULL DEFAULT 0;"
+    "ALTER TABLE character ADD COLUMN legend_drought INTEGER NOT NULL DEFAULT 0;"
+    "ALTER TABLE character ADD COLUMN daily_reward_at INTEGER NOT NULL DEFAULT 0;"
+    "CREATE TABLE loot_log (id INTEGER PRIMARY KEY, character INTEGER NOT NULL, name TEXT NOT NULL, tier INTEGER NOT NULL,"
+    " item TEXT NOT NULL, depth INTEGER NOT NULL, at INTEGER NOT NULL);"
+    "CREATE INDEX loot_log_character ON loot_log (character, at);"
+    "CREATE INDEX loot_log_tier ON loot_log (tier, at);";
+
 static int exec(const char *sql) {
     char *err = NULL;
     if (sqlite3_exec(db, sql, NULL, NULL, &err) != SQLITE_OK) {
@@ -146,6 +157,9 @@ int mu_db_open(const char *path) {
     }
     if (rc == 0 && version < 4) {
         rc = exec(SCHEMA_V4) != 0 || exec("PRAGMA user_version = 4") != 0; // raid rewards
+    }
+    if (rc == 0 && version < 5) {
+        rc = exec(SCHEMA_V5) != 0 || exec("PRAGMA user_version = 5") != 0; // loot rarity
     }
     if (rc != 0) {
         exec("ROLLBACK");

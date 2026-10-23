@@ -803,6 +803,10 @@ MuLevel *mu_level_loaded() {
     return loaded_level;
 }
 
+MuSession *mu_player_loaded() {
+    return loaded_player;
+}
+
 MuScreen *mu_screen_of(MuSession *s) {
     return &s->conn->screen;
 }

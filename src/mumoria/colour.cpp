@@ -2,6 +2,7 @@
 
 #include "colour.h"
 
+#include "loot.h"
 #include "session.h"
 
 // Pastels: every class colour (dark) reads on them, and none is close to
@@ -53,7 +54,10 @@ static int class_of(int id) {
     return id >= 0 && id < 6 ? id : 0;
 }
 
-uint32_t muTileAttr(Coord_t const &coord) {
+uint32_t muTileAttr(Coord_t const &coord, char ch) {
+    if (ch != '@') {
+        return mu_loot_tile_attr(coord, ch); // loot.cpp
+    }
     if (coord.y == py.pos.y && coord.x == py.pos.x && dg.floor[coord.y][coord.x].creature_id == 1) {
         return MU_ATTR_BOLD | MU_ATTR_FG(CLASS_BRIGHT[class_of(py.misc.class_id)]);
     }

@@ -17,8 +17,9 @@ void muBell();
 
 // Other players on the loaded level.
 bool muOtherPlayerAt(Coord_t const &coord);
-// How the "@" on coord is drawn (colour.cpp): 0 when it is not a player.
-uint32_t muTileAttr(Coord_t const &coord);
+// How the map square coord, showing ch, is drawn (colour.cpp): a player's
+// "@" in its colours, an item in its rarity's; 0 for plain.
+uint32_t muTileAttr(Coord_t const &coord, char ch);
 const char *muOtherPlayerNameAt(Coord_t const &coord);
 // Is another player on this level closer to coord than `distance`?
 bool muNearerPlayer(Coord_t const &coord, int distance);
@@ -92,6 +93,21 @@ struct MuFxTogether {
 // drawDungeonPanel(): where this screen's map is, and that it is being drawn.
 void muMapPanel(bool begin);
 void muMapTile(bool begin);
+
+// Loot rarity (loot.cpp). Appends " <Epic>" and the like to a description.
+void muItemRarityTag(Inventory_t const &item, char *description);
+// Item lists: the next line in the item's rarity colour; null for plain again.
+void muItemColour(Inventory_t const *item);
+// Wearing it: false (and says so) below the level its rarity asks.
+bool muCanWear(Inventory_t const &item);
+// Going into the loaded player's pack: a rare find is told and logged, once.
+void muItemCarried(Inventory_t &item);
+// dungeonPlaceRandomObjectAt(): a new item on the floor may be rare.
+void muFloorItem(Coord_t const &coord, int treasure_id);
+// Around monsterDeath(): its drops are rolled by muMonsterDies(), not as floor items.
+void muLootDropping(bool dropping);
+// A rare item appears (or is found): a glow in its rarity's colour.
+void muFxLoot(Coord_t at, int tier);
 
 // Raids (raid.cpp): a raid gate (110) or a raid's way out (111) stepped on.
 void muRaidGate(int sub_category_id);

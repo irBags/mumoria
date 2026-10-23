@@ -541,4 +541,10 @@ const char *special_item_names[SpecialNameIds::SN_ARRAY_SIZE] = {
     "(Poison Needle)",   "(Gas Trap)",       "(Explosion Device)",
     "(Summoning Runes)", "(Multiple Traps)", "(Disarmed)",
     "(Unlocked)",        "of Slay Animal",
+    "of Valour",         "of the Champion",  "of Fury",
+    "of the Bear",       "of the Eagle",     "of Warding",
+    "of the Hunt",       "of Shadows",       "of the Valar",
+    "of the Eldar",      "of Gondolin",      "of Numenor",
+    "of Durin",          "of Feanor",        "of Earendil",
+    "of the Ainur",
 };
