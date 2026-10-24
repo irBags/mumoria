@@ -11,10 +11,10 @@
              ##     ##   ##     ##   ##    ##     ##    ##     ##
              ##     ##    #######    ##     ##   ####   ##     ##
 
-                                Umoria ${umoria_version}
+                 Umoria ${umoria_version}, the engine of Mumoria
 
+          This is the single-player game. Mumoria is the online one:
+           run mumoria-server and play it with any telnet client.
 
-                Umoria is free software released under GPL-3.0
-                    and comes with ABSOLUTELY NO WARRANTY
-
-      For more information: https://github.com/dungeons-of-moria/umoria
+           Free software under GPL-3.0, with ABSOLUTELY NO WARRANTY
+                   https://gitea.spisserbyte.ca/Zip/mumoria

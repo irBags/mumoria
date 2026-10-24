@@ -1,5 +1,8 @@
 # Historical Documents
 
+Mumoria is built on Umoria 5.7, and this is Umoria's history, kept as it
+was; Mumoria's own design and changes are in `docs/MUMORIA_DESIGN.md`.
+
 This directory contains various documents found in the original UMoria
 archives. They have been renamed, with some minor reformatting to the
 Markdown format, to help make consumption easier.

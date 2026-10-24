@@ -1,6 +1,12 @@
-                          Umoria ${umoria_version}  (${current_date})
+           Mumoria, built on Umoria ${umoria_version} of ${current_date}
 
-Previous major releases:
+Mumoria, 2026: Umoria made an online world, by Mike Killingbeck and Claude AI.
+  Accounts, parties, guilds and their banks, a bank, an auction house, trade,
+  chat (with an IRC relay), PvP by choice, shared stores, bosses, raids, loot
+  rarity, animations, custom items and Lua scripts.
+  https://gitea.spisserbyte.ca/Zip/mumoria
+
+Umoria's major releases:
 
             2016-11-27 : v5.7.0
             2008-10-13 : v5.6.0
@@ -19,7 +25,7 @@ Bug reports and contributions can be made to the Umoria repository:
 https://github.com/dungeons-of-moria/umoria
 
 
-               Umoria is free software released under GPL-3.0
+       Mumoria and Umoria are free software released under GPL-3.0
 
                             VMS Moria Version 4.8
 
@@ -39,7 +45,7 @@ VMS Moria Modules :
       V3.0  Internal Help & Misc   - RAK
       V4.0  Source Release Version - RAK
 
-    Umoria is free software released under GNU General Public License v3.0
+   Mumoria is free software released under GNU General Public License v3.0
                    See LICENSE and AUTHORS for more details
 
                Copyright (c) Robert A. Koeneke, James E. Wilson

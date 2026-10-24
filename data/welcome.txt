@@ -1,9 +1,10 @@
-                       Welcome to Moria!
+                       Welcome to Mumoria!
 
-Your first task is to generate a character. You must specify a gender,
-a race, and a class. Anytime before you have made these specifications,
-you can interrupt with control-C. You can also specify the race as
-often as you like by entering '%' to the class request. This will also
-regenerate your attributes.
+Your first task is to make a character: a gender, a race and a class.
+Anytime before you have made these choices, you can interrupt with
+control-C. You can also choose the race again by entering '%' at the class
+question, which rolls new attributes too. Then you will be asked whether
+other players may fight this character (PvP); that can change once a day.
 
-If this is your first time playing, you may want to read the manual first.
+Death is permanent, but your bank and your guild belong to your account.
+In the game, ? lists the commands, and ' then /help the multiplayer ones.

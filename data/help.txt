@@ -17,7 +17,7 @@ Command Summary (@ is optional count, ~ is direction, ^R redraws, ESC aborts)
   t        Take off an item            | @ -        Move without pickup
   u        Use a staff                 |   . ~      Run in direction
   v        Version info and credits    |   /        Identify a character
-  w        Wear/Wield an item          |   CTRL-K   Quit the game
+  w        Wear/Wield an item          |   CTRL-K   Quit (the character dies)
   x        Exchange weapon             | @ CTRL-P   Repeat the last message
   <        Go up an up-staircase       |   CTRL-X   Save character and quit
   >        Go down a down-staircase    | @ ~        For movement
@@ -42,14 +42,51 @@ key strokes by typing ^ and then a letter.
 Type ESCAPE to abort the look command at any point.
 
 Some commands will prompt for a spell, or an inventory item. Selection is
-by an alphabetic character - entering a capital causes a desription to be
+by an alphabetic character - entering a capital causes a description to be
 printed, and the selection may be aborted.
 
 Typing `R*' will make you rest until both your mana and your hp reach their
 maximum values.
 
-Umoria is free software, and you are welcome to distribute it
-under certain conditions; for details, type control-V.
 
-Umoria comes with ABSOLUTELY NO WARRANTY; for details,
-type control-V and view sections 15-17 of the License.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Mumoria: playing together              (/help in chat lists every command)
+  '        Talk: type text for the level, or a / command:
+             /w world   /g guild   /p party   /t name private   /r reply
+             /who   /invite name   /accept   /leave   /party turns on|off
+             /guild ...   /trade name   /pvp on|off
+             /loot   /legends   /item a|worn   /help
+  "  ~     Attack the player there (both need PvP on; never in the town)
+
+Town buildings 1 to 6 are Umoria's stores. They are never busy: each player
+has their own stock, but the shared supply can run out for everyone.
+Building 7 is your Bank, 8 the Guild Hall and 9 the Auction House.
+
+A boss rules every second level. Every fifth level has a raid gate (0):
+step on it, with your party. Gear can be Uncommon (green), Rare (blue),
+Epic (purple) or Legendary (orange); the rarer, the higher the level it
+needs to wear.
+
+The world goes on while you read this. Death is permanent; your bank and
+your guild belong to your account.
+
+Mumoria is free software, built on Umoria, and you are welcome to
+distribute it under certain conditions; it comes with ABSOLUTELY NO
+WARRANTY. For details, type control-V.

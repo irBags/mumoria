@@ -6,7 +6,7 @@ default `scripts` next to where the server runs) is loaded at start, in name
 order. An admin's `/reload` loads them all again without a restart, and
 `/scripts` lists what loaded and the last errors.
 
-`examples/` holds three to copy from (they are not loaded where they are):
+`examples/` holds scripts to copy from (they are not loaded where they are):
 
 * `10_items.lua`: custom items, from a Legendary sword to a Rare ring.
 * `20_orc_chieftain.lua`: a boss fight with guards, phases, healing and loot.

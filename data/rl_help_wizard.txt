@@ -14,3 +14,5 @@
 &  - Summon random monster
 %  - Generate a dungeon item
 @  - Create an object *CAN CAUSE FATAL ERROR*
+
+In Mumoria, wizard mode is for admins only, and every use is logged.
