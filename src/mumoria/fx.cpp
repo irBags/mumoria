@@ -127,6 +127,11 @@ class Anim {
         }
     }
 
+    // A sound at ms `at`, from square c (vterm.h MuSound).
+    void sound(int at, Coord_t c, const char *name) {
+        sounds_.push_back(Sound{at, c, name});
+    }
+
     void put(int at, int ms, Coord_t c, char ch, uint32_t attr) {
         if (!on_level(c) || ms <= 0) {
             return;
@@ -137,10 +142,11 @@ class Anim {
         }
     }
 
-    // To every player on the level who can see each square (lock held).
+    // To every player on the level who can see each square, and the sounds
+    // to everyone near enough to hear them (lock held).
     void play() {
         MuSession *self = mu_self;
-        if (self == nullptr || self->level == nullptr || cells_.empty()) {
+        if (self == nullptr || self->level == nullptr || (cells_.empty() && sounds_.empty())) {
             return;
         }
         int64_t end = start_ + length_;
@@ -152,10 +158,19 @@ class Anim {
         std::vector<MuFxCell> seen;
         for (MuSession *p : self->level->players) {
             bool me = p == self;
-            if ((!me && p->in_building) || (me ? py.flags.blind : p->ctx.py.flags.blind) > 0) {
+            if (!me && p->in_building) {
                 continue;
             }
             Coord_t eye = me ? py.pos : p->ctx.py.pos;
+            for (Sound const &k : sounds_) {
+                int volume = loudness(me, eye, k.at_square);
+                if (volume > 0) {
+                    mu_vt_sound(mu_screen_of(p), start_ + k.at, k.name, volume);
+                }
+            }
+            if ((me ? py.flags.blind : p->ctx.py.flags.blind) > 0) {
+                continue; // the blind still hear
+            }
             seen.clear();
             for (MuFxCell const &c : cells_) {
                 Coord_t at{c.y, c.x};
@@ -168,6 +183,30 @@ class Anim {
     }
 
   private:
+    struct Sound {
+        int at;
+        Coord_t at_square;
+        const char *name;
+    };
+
+    // Full beside you, fainter with distance, muffled by walls; out of
+    // hearing past MON_MAX_SIGHT. Your own doings are never faint.
+    static int loudness(bool me, Coord_t ear, Coord_t from) {
+        int d = coordDistanceBetween(ear, from);
+        if (!me && d > config::monsters::MON_MAX_SIGHT) {
+            return 0;
+        }
+        int volume = 100 - 4 * d;
+        if (!los(ear, from)) {
+            volume /= 2;
+        }
+        if (me) {
+            return volume < 60 ? 60 : volume;
+        }
+        return volume < 10 ? 0 : volume;
+    }
+
+    std::vector<Sound> sounds_;
     std::vector<MuFxCell> cells_;
     int64_t start_;
     int length_ = 0;
@@ -304,6 +343,7 @@ Weapon weapon_kind(int category) {
 void muFxCast(Coord_t at, int element) {
     Palette const &p = pal(element);
     Anim a;
+    a.sound(0, at, element == MU_FX_FIZZLE ? "fizzle" : "cast");
     if (element == MU_FX_FIZZLE) {
         a.put(0, FRAME_MS, at, MU_FX_TINT, on(p.mid, 232));
         Coord_t puff = step(at, RING[coin() ? 1 : 7]); // smoke rises
@@ -327,6 +367,7 @@ void muFxCast(Coord_t at, int element) {
 void muFxHeal(Coord_t at) {
     Palette const &p = pal(MU_FX_HEAL);
     Anim a;
+    a.sound(0, at, "heal");
     a.put(0, 2 * FRAME_MS, at, MU_FX_TINT, on(p.dark));
     around(a, 0, FRAME_MS, at, false, '+', fg(p.bright));
     around(a, FRAME_MS, FRAME_MS, at, true, '+', fg(p.mid));
@@ -341,6 +382,9 @@ void muFxLoot(Coord_t at, int tier) {
     int colour = COLOUR[tier >= 0 && tier <= 4 ? tier : 0];
     int height = tier >= 4 ? 4 : tier >= 3 ? 3 : 2;
     Anim a;
+    if (tier >= 2) {
+        a.sound(0, at, "loot");
+    }
     for (int f = 0; f < 6; f++) {
         a.put(f * FRAME_MS, FRAME_MS, at, MU_FX_TINT, f % 2 == 0 ? on(colour, 231) : on(colour, 16));
         for (int k = 1; k <= height; k++) {
@@ -368,17 +412,25 @@ void muFxRay(Coord_t from, int direction, Coord_t end, int element, int outcome,
     int t = flight(a, from, direction, end, p, head, element);
     switch (outcome) {
         case MU_FX_HIT:
-        case MU_FX_KILL:
-            burst(a, t, end, p, outcome == MU_FX_KILL || (on_level(end) && dg.floor[end.y][end.x].creature_id == 0));
+        case MU_FX_KILL: {
+            bool kill = outcome == MU_FX_KILL || (on_level(end) && dg.floor[end.y][end.x].creature_id == 0);
+            burst(a, t, end, p, kill);
+            a.sound(t, end, "hit");
+            if (kill) {
+                a.sound(t + 3 * FRAME_MS, end, "kill");
+            }
             break;
+        }
         case MU_FX_AFFECT:
             sparkle(a, t, end, p);
             break;
         case MU_FX_RESIST:
             glance(a, t, end, d, head, p, true);
+            a.sound(t, end, "miss");
             break;
         case MU_FX_MISS:
             glance(a, t, end, d, head, p, false);
+            a.sound(t, end, "miss");
             break;
         case MU_FX_WALL:
             if (on_level(end) && !open(end)) {
@@ -398,6 +450,7 @@ void muFxBall(Coord_t from, int direction, Coord_t center, int element) {
     Anim a;
     int t = same(from, center) ? 0 : flight(a, from, direction, center, p, head, element);
     blast(a, t, center, p);
+    a.sound(t, center, "blast");
     a.play();
 }
 
@@ -421,7 +474,10 @@ static int aim(Anim &a, Coord_t from, Coord_t to, Palette const &p, int ms) {
 void muFxBreath(Coord_t from, Coord_t center, int element) {
     Palette const &p = pal(element);
     Anim a;
-    blast(a, aim(a, from, center, p, 20), center, p);
+    a.sound(0, from, "roar"); // a breath is drawn with a roar
+    int t = aim(a, from, center, p, 20);
+    blast(a, t, center, p);
+    a.sound(t, center, "blast");
     a.play();
 }
 
@@ -436,6 +492,7 @@ void muFxBolt(Coord_t from, Coord_t to, int element, int outcome) {
         sparkle(a, t, to, p);
     } else {
         burst(a, t, to, p, false);
+        a.sound(t, to, "hit");
     }
     a.play();
 }
@@ -444,6 +501,7 @@ void muFxMonsterBlow(Coord_t from, Coord_t target, int description, bool hit, bo
     Coord_t d{sign(target.y - from.y), sign(target.x - from.x)};
     const int F = BLOW_MS;
     Anim a;
+    a.sound(0, target, hit ? "hurt" : "miss");
     if (!hit) {
         if (seen) {
             a.put(0, F + 30, beside(target, d), '~', fg(244)); // it misses: the air beside you
@@ -527,6 +585,7 @@ void muFxSwing(Coord_t from, Coord_t target, int weapon, int outcome, bool criti
     const uint32_t steel = fg(255), dull = fg(246);
 
     Anim a;
+    a.sound(F, target, !hit ? "miss" : critical ? "crit" : "hit");
     int t = 0;
     switch (weapon_kind(weapon)) {
         case Weapon::Blade: // swords and daggers: a slash
@@ -592,7 +651,14 @@ void muFxSwing(Coord_t from, Coord_t target, int weapon, int outcome, bool criti
     }
     if (outcome == MU_FX_KILL) {
         splat(a, t, target);
+        a.sound(t, target, "kill");
     }
+    a.play();
+}
+
+void muSound(Coord_t at, const char *name) {
+    Anim a;
+    a.sound(0, at, name);
     a.play();
 }
 

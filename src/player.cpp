@@ -1274,6 +1274,7 @@ static void openClosedDoor(Coord_t coord) {
         inventoryItemCopyTo(config::dungeon::objects::OBJ_OPEN_DOOR, game.treasure.list[tile.treasure_id]);
         tile.feature_id = TILE_CORR_FLOOR;
         dungeonLiteSpot(coord);
+        MU_ONLY(muSound(coord, "door_open");)
         game.command_count = 0;
     }
 }
@@ -1393,6 +1394,7 @@ void playerCloseDoor() {
                     inventoryItemCopyTo(config::dungeon::objects::OBJ_CLOSED_DOOR, item);
                     tile.feature_id = TILE_BLOCKED_FLOOR;
                     dungeonLiteSpot(coord);
+                    MU_ONLY(muSound(coord, "door_close");)
                 } else {
                     printMessage("The door appears to be broken.");
                 }

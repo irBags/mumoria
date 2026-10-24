@@ -335,4 +335,7 @@ if (NOT WIN32)
     target_compile_options(mumoria-server PRIVATE -g)
 
     add_executable(mumoria-client client/mumoria_client.c)
+    # its sounds go beside it (client/sounds/README.md)
+    file(GLOB client_sounds client/sounds/*.wav)
+    file(COPY ${client_sounds} DESTINATION "${build_dir}/sounds")
 endif ()

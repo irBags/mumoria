@@ -520,6 +520,7 @@ static void monsterOpenDoor(Tile_t &tile, int16_t monster_hp, uint32_t move_bits
             }
             tile.feature_id = TILE_CORR_FLOOR;
             dungeonLiteSpot(coord);
+            MU_ONLY(muSound(coord, "door_open");)
             rcmove |= config::monsters::move::CM_OPEN_DOOR;
             do_move = false;
         }
@@ -535,6 +536,7 @@ static void monsterOpenDoor(Tile_t &tile, int16_t monster_hp, uint32_t move_bits
             item.misc_use = (int16_t) (1 - randomNumber(2));
             tile.feature_id = TILE_CORR_FLOOR;
             dungeonLiteSpot(coord);
+            MU_ONLY(muSound(coord, "door_bash");)
             printMessage("You hear a door burst open!");
             playerDisturb(1, 0);
         }
@@ -1321,6 +1323,7 @@ static void monsterAttackingUpdate(Monster_t &monster, int monster_id, int moves
 
                             // force it to be exactly zero
                             monster.sleep_count = 0;
+                            MU_ONLY(muSound(monster.pos, "roar");) // it wakes, and says so
                         }
                     }
                 }

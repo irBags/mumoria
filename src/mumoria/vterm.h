@@ -58,6 +58,19 @@ typedef struct {
     uint32_t attr;
 } MuFxCell;
 
+// A sound for the client to play at t (fx.cpp queues them with the
+// animations). It goes as telnet IAC SB MU_TELOPT_SOUND "name volume" IAC SE,
+// only to a client that answered the server's DO with WILL (net.c), so a
+// plain telnet never sees it. Volume is 1-100.
+#define MU_TELOPT_SOUND 212
+#define MU_SOUND_MAX 64
+#define MU_SOUND_NAME 16
+typedef struct {
+    int64_t t;
+    char name[MU_SOUND_NAME];
+    int volume;
+} MuSound;
+
 typedef struct MuScreen {
     pthread_mutex_t lock;
     char cell[MU_ROWS][MU_COLS];
@@ -90,6 +103,9 @@ typedef struct MuScreen {
     int fx_n;
     char ov_ch[MU_GAME_ROWS][MU_COLS]; // what is drawn over the map now; 0 = nothing
     uint32_t ov_attr[MU_GAME_ROWS][MU_COLS];
+    int sound; // the client plays sounds (it said WILL MU_TELOPT_SOUND)
+    MuSound sounds[MU_SOUND_MAX];
+    int sound_n;
 
     // output, drained by the session's I/O thread
     char *out;
@@ -135,7 +151,10 @@ void mu_vt_map_drawing(MuScreen *s, int delta); // +1 before drawing map squares
 void mu_vt_map_panel(MuScreen *s, int top, int bottom, int left, int right, int row_prt, int col_prt);
 void mu_vt_fx_add(MuScreen *s, const MuFxCell *cells, int n);
 void mu_vt_fx_clear(MuScreen *s);
-// Draws the frame due now; returns the ms until the next change, -1 if none.
+// A sound at t (mu_vt_now_ms); nothing unless the client plays sounds.
+void mu_vt_sound(MuScreen *s, int64_t t, const char *name, int volume);
+// Draws the frame due now and sends the sounds due; returns the ms until the
+// next change, -1 if none.
 int mu_vt_fx_tick(MuScreen *s);
 
 // Takes what is waiting to be sent; returns its length (0 if none).

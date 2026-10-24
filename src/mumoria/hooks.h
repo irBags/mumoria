@@ -93,6 +93,9 @@ void muFxBolt(Coord_t from, Coord_t to, int element, int outcome);
 void muFxMonsterBlow(Coord_t from, Coord_t target, int description, bool hit, bool seen);
 // One melee blow; weapon is the wielded item's category (TV_*).
 void muFxSwing(Coord_t from, Coord_t target, int weapon, int outcome, bool critical);
+// A sound from square at, for everyone near enough to hear it (fx.cpp);
+// the animations above make their own. Names: client/sounds/README.md.
+void muSound(Coord_t at, const char *name);
 // While one is alive, animations play at the same time (Starlite's eight beams).
 struct MuFxTogether {
     MuFxTogether();

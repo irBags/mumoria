@@ -471,7 +471,8 @@ static void refresh_view(MuSession *s) {
 }
 
 // Battle turns: "YOUR TURN!" in bold red under the stats, beside the map,
-// while it is this player's turn in a round, with a bell as the turn comes.
+// while it is this player's turn in a round, with a bell (or, for a client
+// that plays sounds, a chime) as the turn comes.
 // It goes once they have acted (lock held, at the main prompt).
 static void turn_label(MuSession *s) {
     bool mine = mu_round_my_turn(s);
@@ -479,7 +480,11 @@ static void turn_label(MuSession *s) {
         return;
     }
     if (mine && !s->turn_shown) {
-        muBell();
+        if (mu_vt_current->sound) {
+            mu_vt_sound(mu_vt_current, mu_vt_now_ms(), "your_turn", 100); // to them alone
+        } else {
+            muBell();
+        }
     }
     s->turn_shown = mine;
     mu_vt_set_attr(mu_vt_current, mine ? MU_ATTR_FG(196) | MU_ATTR_BOLD : 0);
@@ -658,6 +663,9 @@ static void record_death(MuSession *s) {
 }
 
 void muEndGame() {
+    if (mu_self->level != nullptr && !game.total_winner) {
+        muSound(py.pos, "die");
+    }
     record_death(mu_self);
     throw MuSessionEnd{MuSessionEnd::Died, ""};
 }

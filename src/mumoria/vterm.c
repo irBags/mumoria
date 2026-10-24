@@ -533,8 +533,43 @@ void mu_vt_fx_add(MuScreen *s, const MuFxCell *cells, int n) {
     wake(s);
 }
 
+void mu_vt_sound(MuScreen *s, int64_t t, const char *name, int volume) {
+    if (!s->sound) {
+        return;
+    }
+    pthread_mutex_lock(&s->lock);
+    if (s->sound_n < MU_SOUND_MAX) {
+        MuSound *k = &s->sounds[s->sound_n++];
+        k->t = t;
+        snprintf(k->name, sizeof(k->name), "%s", name);
+        k->volume = volume < 1 ? 1 : volume > 100 ? 100 : volume;
+    }
+    pthread_mutex_unlock(&s->lock);
+    wake(s);
+}
+
+// The sounds due now, to the client; the time of the next one, -1 if none.
+static int64_t send_sounds(MuScreen *s, int64_t now) {
+    int64_t next = -1;
+    int kept = 0;
+    for (int i = 0; i < s->sound_n; i++) {
+        MuSound k = s->sounds[i];
+        if (k.t > now) {
+            s->sounds[kept++] = k;
+            next = next < 0 || k.t < next ? k.t : next;
+            continue;
+        }
+        char msg[MU_SOUND_NAME + 16];
+        int n = snprintf(msg, sizeof(msg), "\377\372%c%s %d\377\360", MU_TELOPT_SOUND, k.name, k.volume);
+        out_append(s, msg, n);
+    }
+    s->sound_n = kept;
+    return next;
+}
+
 void mu_vt_fx_clear(MuScreen *s) {
     pthread_mutex_lock(&s->lock);
+    s->sound_n = 0;
     s->fx_n = 0;
     memset(s->ov_ch, 0, sizeof(s->ov_ch));
     s->map_set = 0;
@@ -571,6 +606,10 @@ int mu_vt_fx_tick(MuScreen *s) {
         }
     }
     s->fx_n = kept;
+    int64_t sound_next = send_sounds(s, now);
+    if (sound_next >= 0 && (next < 0 || sound_next < next)) {
+        next = sound_next;
+    }
     if (memcmp(ch, s->ov_ch, sizeof(ch)) != 0 || memcmp(look, s->ov_attr, sizeof(look)) != 0) {
         memcpy(s->ov_ch, ch, sizeof(ch));
         memcpy(s->ov_attr, look, sizeof(look));

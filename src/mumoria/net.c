@@ -114,10 +114,14 @@ static void feed(MuConn *c, const unsigned char *buf, int n) {
                     break; // a literal 255; dropped below as not printable
                 }
                 c->tn_state = (ch == SB) ? 3 : (ch >= WILL && ch <= DONT) ? 2 : 0;
+                c->tn_verb = ch;
                 c->sb_len = 0;
                 continue;
             case 2:
                 c->tn_state = 0;
+                if (ch == MU_TELOPT_SOUND && (c->tn_verb == WILL || c->tn_verb == WONT)) {
+                    c->screen.sound = c->tn_verb == WILL; // the client plays sounds (vterm.h)
+                }
                 continue;
             case 3:
                 if (ch == IAC) {
@@ -297,8 +301,10 @@ void mu_net_serve(int listen_fd, void (*on_conn)(MuConn *conn)) {
         mu_vt_init(&c->screen, c->wake_pipe[1]);
         c->refs = 2;
 
+        // DO MU_TELOPT_SOUND: mumoria-client answers WILL and plays sounds
         static const char hello[] = {(char) IAC, (char) WILL, OPT_ECHO, (char) IAC, (char) WILL, OPT_SGA,
-                                     (char) IAC, (char) DO,   OPT_SGA,  (char) IAC, (char) DO,   OPT_NAWS};
+                                     (char) IAC, (char) DO,   OPT_SGA,  (char) IAC, (char) DO,   OPT_NAWS,
+                                     (char) IAC, (char) DO,   (char) MU_TELOPT_SOUND};
         mu_vt_raw(&c->screen, hello, sizeof(hello));
 
         pthread_attr_t attr;

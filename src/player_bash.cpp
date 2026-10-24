@@ -179,6 +179,7 @@ static void playerBashClosedDoor(Coord_t coord, int dir, Tile_t &tile, Inventory
     auto abs_misc_use = (int) std::abs((std::intmax_t) item.misc_use);
     if (randomNumber(chance * (20 + abs_misc_use)) < 10 * (chance - abs_misc_use)) {
         printMessage("The door crashes open!");
+        MU_ONLY(muSound(coord, "door_bash");)
 
         inventoryItemCopyTo(config::dungeon::objects::OBJ_OPEN_DOOR, game.treasure.list[tile.treasure_id]);
 

@@ -647,6 +647,28 @@ steps, and what stays compatible.
   (kill, before the loot), `raid.cpp` `muMonsterHurt` (hurt, script bosses
   only), `social.cpp` (commands nobody else knew).
 
+### 2.24 Sounds
+
+* **Who hears them:** only `mumoria-client`. The server says `DO 212` (a
+  private telnet option, `MU_TELOPT_SOUND`); the client answers `WILL`
+  (`-q` answers `WONT`), and only then is anything sent. A plain telnet
+  never sees a sound.
+* **On the wire:** `IAC SB 212 "name volume" IAC SE`, volume 1-100. The
+  client plays `sounds/<name>.wav` beside it with `paplay` (Linux, WSL),
+  `afplay` (macOS) or `$MUMORIA_PLAYER`; a missing file is silence. The
+  names and when each plays: `client/sounds/README.md`.
+* **Timed with the animations:** an animation (`fx.cpp` `Anim`) carries its
+  sounds, so a blow's thud comes with its frame. They go into the same
+  per-screen queue (`vterm.c` `mu_vt_sound`) and the I/O thread sends each
+  when it is due. `muSound(coord, name)` is a sound with no animation:
+  doors, a monster waking, a death.
+* **How loud:** full beside you, 4 less a square, halved through walls,
+  unheard past 20 squares; your own doings never below 60. The blind still
+  hear. Battle turns' "your turn" chime goes to that player alone (a bell
+  when their client does not play sounds).
+* **The starter sounds** are synthesised by `client/sounds/make_sounds.py`
+  (no samples, no licences); any can be replaced by a `.wav` of its name.
+
 ## 3. Menus: drawn the way Umoria draws
 
 There are no new windows. Bank, Guild Hall, Auction House and Trade are drawn
@@ -805,6 +827,14 @@ of the following against the built server:
   monsters on an idle player (the server died); fixed, 224 drops and no
   crash. Umoria's breeding, summoning and new monsters now avoid players'
   squares, and a door does not close on one
+* sounds (2.24): six bots that answered `WILL 212` on 50 ft got hit, kill,
+  hurt, roar, cast, miss, die and door_open, quieter with distance; the real
+  client against a stand-in server answered `WILL`, ran its player for
+  `hit 80` and `door_open 25` with the right volumes, refused a name with
+  shell characters, kept quiet for a missing file and showed none of it on
+  the screen; `paplay` plays the files under WSLg. Not heard by a person
+  yet; not tested: crit, fizzle, blast, heal, loot, the doors' close and
+  bash, your_turn
 
 ## 6. Not done yet
 

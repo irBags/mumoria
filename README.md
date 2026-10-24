@@ -86,8 +86,9 @@ repository's `scripts/` folder there).
 
     telnet yourserver 4000
 
-or `mumoria-client yourserver 4000` (which sets up the terminal; Ctrl-]
-quits). Type `new` at the account prompt to make an account, then a
+or `mumoria-client yourserver 4000` (which sets up the terminal and plays
+the game's sounds; `-q` for none; Ctrl-] quits; see
+`client/sounds/README.md`). Type `new` at the account prompt to make an account, then a
 character. The keys are Umoria's (`?` lists them). The multiplayer ones:
 
 * `'` then text: talk; `'` then a `/` command, such as `/help`, `/who`,
