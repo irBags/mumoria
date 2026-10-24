@@ -304,6 +304,8 @@ if (NOT WIN32)
             ${source_dir}/mumoria/colour.cpp
             ${source_dir}/mumoria/raid.cpp
             ${source_dir}/mumoria/loot.cpp
+            ${source_dir}/mumoria/items.cpp
+            ${source_dir}/mumoria/script.cpp
             ${source_dir}/mumoria/fx.cpp
             ${source_dir}/mumoria/screens.cpp
             ${source_dir}/mumoria/server_main.cpp
@@ -313,9 +315,16 @@ if (NOT WIN32)
             ${source_dir}/mumoria/world.cpp
     )
 
+    # Lua 5.4, vendored (src/lua/README.md): the server's scripts
+    file(GLOB lua_files ${source_dir}/lua/*.c)
+    list(REMOVE_ITEM lua_files ${source_dir}/lua/lua.c ${source_dir}/lua/luac.c)
+    add_library(mumoria-lua STATIC ${lua_files})
+    target_compile_definitions(mumoria-lua PRIVATE LUA_USE_POSIX)
+    set_target_properties(mumoria-lua PROPERTIES C_STANDARD 99 COMPILE_OPTIONS "-w")
+
     add_executable(mumoria-server ${mumoria_engine_files} ${mumoria_files})
     target_compile_definitions(mumoria-server PRIVATE MUMORIA)
-    target_link_libraries(mumoria-server Threads::Threads ${SQLITE3_LIBRARY})
+    target_link_libraries(mumoria-server mumoria-lua Threads::Threads ${SQLITE3_LIBRARY} m)
 
     add_executable(mumoria-client client/mumoria_client.c)
 endif ()

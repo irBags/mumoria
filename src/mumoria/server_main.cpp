@@ -2,8 +2,10 @@
 // the listener. See docs/MUMORIA_DESIGN.md section 4.
 
 #include "irc.h"
+#include "items.h"
 #include "mu_config.h"
 #include "screens.h"
+#include "script.h"
 #include "session.h"
 #include "social.h"
 
@@ -167,6 +169,8 @@ int main(int argc, char *argv[]) {
 
     mu_world_lock(nullptr);
     mu_world_init();
+    mu_items_load();
+    mu_script_init(setting("scripts_dir", "scripts"));
     mu_world_unlock(nullptr, false);
 
     int fd = mu_net_listen(port);

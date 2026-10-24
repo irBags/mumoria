@@ -93,7 +93,13 @@ constexpr uint8_t MAX_TITLES = 45;     // Used with scrolls
 constexpr uint8_t MAX_SYLLABLES = 153; // Used with scrolls
 
 extern uint8_t objects_identified[OBJECT_IDENT_SIZE];
-extern const char *special_item_names[SpecialNameIds::SN_ARRAY_SIZE];
+#ifdef MUMORIA
+// Mumoria's custom items take the names past SN_ARRAY_SIZE (mumoria/items.cpp).
+constexpr int SN_TABLE_SIZE = 256;
+#else
+constexpr int SN_TABLE_SIZE = SpecialNameIds::SN_ARRAY_SIZE;
+#endif
+extern const char *special_item_names[SN_TABLE_SIZE];
 
 // Following are arrays for descriptive pieces
 extern const char *colors[MAX_COLORS];

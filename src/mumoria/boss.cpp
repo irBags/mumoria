@@ -11,6 +11,7 @@
 #include "loot.h"
 #include "mu_config.h"
 #include "raid.h"
+#include "script.h"
 #include "session.h"
 #include "social.h"
 
@@ -174,7 +175,8 @@ void muMonsterDies(int monster_id, int treasure_before) {
     Coord_t center{m.pos.y, m.pos.x};
     bool lord = m.mu_boss == 3;
     static const int SOURCE[] = {MU_LOOT_MONSTER, MU_LOOT_BOSS, MU_LOOT_CAPTAIN, MU_LOOT_LORD};
-    int source = SOURCE[m.mu_boss <= 3 ? m.mu_boss : 0];
+    int source = m.mu_script != 0 && m.mu_boss == 0 ? MU_LOOT_BOSS : SOURCE[m.mu_boss <= 3 ? m.mu_boss : 0];
+    mu_script_kill(monster_id); // script.cpp: before the loot, so a script's drops are rolled for too
     int creature_level = creatures_list[m.creature_id].level;
     if (m.mu_boss == 1) {
         boss_dies(monster_id);

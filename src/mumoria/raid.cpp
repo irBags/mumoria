@@ -11,8 +11,10 @@
 
 #include "raid.h"
 
+#include "items.h"
 #include "loot.h"
 #include "mu_config.h"
+#include "script.h"
 #include "session.h"
 #include "social.h"
 
@@ -253,7 +255,9 @@ void rewards(MuSession *s, MuRaid const &raid, Coord_t const &center) {
         make_item(id, raid.gate + 25, 5);
         // Rare at least; a character's first raid reward of the day, Epic at least
         bool daily = mu_db_int("SELECT daily_reward_at FROM character WHERE id = ?", 0, "i", p->char_id) / 86400 != now / 86400;
-        mu_loot_bless(game.treasure.list[id], MU_LOOT_REWARD, raid.gate, raid.gate, p, daily ? MU_EPIC : MU_RARE);
+        if (mu_items_drop(game.treasure.list[id], MU_LOOT_REWARD, raid.gate) < 0) {
+            mu_loot_bless(game.treasure.list[id], MU_LOOT_REWARD, raid.gate, raid.gate, p, daily ? MU_EPIC : MU_RARE);
+        }
         if (daily) {
             mu_db_run("UPDATE character SET daily_reward_at = ? WHERE id = ?", "ii", now, p->char_id);
             mu_system(p, "[Daily] Your first raid reward today: Epic or better.");
@@ -487,6 +491,7 @@ std::string mu_raid_admin(MuSession *s, std::string const &arg) {
 // --- engine hooks -------------------------------------------------------------
 
 void muMonsterHurt(int monster_id) {
+    mu_script_hurt(monster_id); // script.cpp: a script's boss
     Monster_t &m = monsters[monster_id];
     MuRaid *raid = raid_here();
     if (m.mu_boss != 3 || raid == nullptr || raid->boss_hp <= 0) {

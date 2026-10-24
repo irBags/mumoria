@@ -574,6 +574,53 @@ steps, and what stays compatible.
 * **DB (schema 5):** `character.epic_drought`, `legend_drought`,
   `daily_reward_at`; `loot_log(character, name, tier, item, depth, at)`.
 
+### 2.22 Custom items
+
+* **What one is:** one of Umoria's base items (saves refer to items by
+  their index in its fixed table, so there can be no new kinds) with its
+  own name, rarity, to-hit, damage, armour, dice, bonus amount and powers,
+  and where (anywhere, bosses and raids, raid lords, never) and how often
+  (1 in N gear drops there, between two depths) it drops.
+* **Making one:** an admin's `/makeitem` opens a form (base item by part
+  of its name, name, rarity, bonuses, powers, depths, source, chance; `s`
+  saves, `p` saves and puts one beside you); `/makeitem <id>` edits one;
+  `/items` lists them; `/items drop|on|off <id>`. Audited. A script makes
+  them with `mu.item{}` (2.23); a script's item is edited in its script.
+* **Names:** each takes a special-name slot past Umoria's own
+  (`SN_ARRAY_SIZE`..255, `SN_TABLE_SIZE` under MUMORIA), kept for good, so
+  an item already made keeps its name: 184 in all. "Thunderfury" shows as
+  `'Thunderfury'` once identified; "of the Storm" as it is.
+* **Drops:** every gear drop (floor, monster, boss, raid hoard, raid
+  reward) first tries the custom items (`mu_items_drop`), then the rarity
+  roll (2.21). A script's item drops only while its script is loaded.
+  Changing an item changes those made from then on, not those found.
+* **Files:** `src/mumoria/items.cpp`, `items.h`; DB (schema 6)
+  `custom_item`.
+
+### 2.23 Scripts (Lua)
+
+* **Lua 5.4.9**, vendored in `src/lua` (`src/lua/README.md`: source and
+  checksum), built as a static library for the server only.
+* **Loading:** every `*.lua` in `scripts_dir` (default `scripts`), in name
+  order, at start and on an admin's `/reload`; `/scripts` lists them and
+  the last errors. The guide and API are `scripts/README.md`; examples in
+  `scripts/examples/` (not loaded from there).
+* **The API (`mu`):** `mu.item`, `mu.boss`, `mu.on("enter"|"kill"|"hurt")`,
+  `mu.command`, and calls to tell, spawn, drop, give, teleport, heal and
+  keep state (`mu.set`/`mu.get`, table `script_state`). `mu.on`,
+  `mu.command` and `mu.boss` are a Lua prelude in `script.cpp`.
+* **Fenced in:** one state, used only under the world lock. No io, os,
+  package, debug, load, dofile or string.dump; 64 MB at most; one call
+  stopped after about 5 million instructions (a count hook). An error goes
+  to the log and to the admins online; each handler runs in its own pcall.
+* **Script bosses:** `Monster_t::mu_script` (its key's number + 1) and
+  `mu_phase` take two padding bytes, so the struct keeps its 24 bytes and
+  saved levels load (`static_assert`s in `world.cpp` guard both structs). A
+  script boss's drops roll as a boss's.
+* **Hooks:** `world.cpp` `enter_level` (enter), `boss.cpp` `muMonsterDies`
+  (kill, before the loot), `raid.cpp` `muMonsterHurt` (hurt, script bosses
+  only), `social.cpp` (commands nobody else knew).
+
 ## 3. Menus: drawn the way Umoria draws
 
 There are no new windows. Bank, Guild Hall, Auction House and Trade are drawn
@@ -622,7 +669,8 @@ cell; `colour.cpp` decides it.
 
 Settings are in `mumoria.conf` (key = value). `mumoria.conf.example` lists
 them: `port`, `db`, `guild_cost`, `party_gold_per_level`, `irc_host`,
-`irc_port`, `irc_channel`, `irc_nick`, `aol_token_secret`.
+`irc_port`, `irc_channel`, `irc_nick`, `aol_token_secret`, `scripts_dir`.
+Lua comes with the source (`src/lua`): nothing to install.
 
 Without root, ncurses can be built from source into `~/local`
 (`./configure --prefix=$HOME/local --enable-overwrite --without-cxx-binding`,
@@ -693,6 +741,17 @@ of the following against the built server:
   powers; a level 1 player is refused a Legendary ("must be level 25"); the
   tiers survive a disconnect and a fresh login. Not tested: a raid reward's
   daily Epic, the bad-luck counter reaching an Epic
+* custom items and scripts (2.22, 2.23), with the three examples and a test
+  script loaded: a broken script's error (with its traceback) is shown and
+  the other four load; `mu.set`/`mu.get`; an endless loop is stopped and
+  the server carries on; `mu.give` puts Thunderfury in the pack, which
+  identified reads `'Thunderfury' (3d6) (+14,+16) (+2) <Legendary>` with its
+  powers, and is wielded; on 300 ft the chieftain appears and is announced;
+  `mu.teleport`, `mu.spawn`; its phases at 70 and 35 percent call orcs and
+  shamans and heal it; its death tells the world and drops Epic loot;
+  `/bounty` counts orcs; the `/makeitem` form (base search, name, rarity,
+  to-hit, powers) saves and drops a glowing Epic dagger; `/items` lists
+  admin and script items; `/reload`; `/scripts`
 
 ## 6. Not done yet
 

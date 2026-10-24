@@ -714,7 +714,7 @@ void itemDescription(obj_desc_t description, Inventory_t const &item, bool add_p
     // TODO(cook): `spellItemIdentified()` is called several times in this
     // function, but `item` is immutable, so we should be able to call and
     // assign it once, then use that value everywhere below.
-    if (item.special_name_id != SpecialNameIds::SN_NULL && spellItemIdentified(item)) {
+    if (item.special_name_id != SpecialNameIds::SN_NULL && special_item_names[item.special_name_id] != nullptr && spellItemIdentified(item)) {
         (void) strcat(tmp_val, " ");
         (void) strcat(tmp_val, special_item_names[item.special_name_id]);
     }

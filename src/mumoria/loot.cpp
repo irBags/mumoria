@@ -17,6 +17,7 @@
 
 #include <algorithm>
 
+#include "items.h"
 #include "mu_config.h"
 #include "session.h"
 #include "social.h"
@@ -81,7 +82,9 @@ bool eligible(Inventory_t const &item) {
     uint8_t c = item.category_id;
     bool gear = weapon(c) || armour(c) || jewellery(c) || c == TV_STAFF || c == TV_WAND;
     // a ring of teleportation and the like stays what it is
-    return gear && mu_rarity(item) == MU_COMMON && item.id < MAX_OBJECTS_IN_GAME && (game_objects[item.id].flags & TR_CURSED) == 0;
+    // a custom item (items.cpp) is what its maker made it
+    return gear && mu_rarity(item) == MU_COMMON && item.special_name_id < SN_ARRAY_SIZE && item.id < MAX_OBJECTS_IN_GAME &&
+           (game_objects[item.id].flags & TR_CURSED) == 0;
 }
 
 int level_of(MuSession *p) {
@@ -316,6 +319,26 @@ int mu_rarity_level(int tier) {
     return TIERS[tier >= 0 && tier < MU_RARITY_COUNT ? tier : 0].level;
 }
 
+int32_t mu_rarity_worth(int tier) {
+    return TIERS[tier >= 0 && tier < MU_RARITY_COUNT ? tier : 0].worth;
+}
+
+bool mu_loot_spot_near(Coord_t const &at, int radius, Coord_t &out) {
+    for (int r = 1; r <= radius; r++) {
+        for (int dy = -r; dy <= r; dy++) {
+            for (int dx = -r; dx <= r; dx++) {
+                Coord_t c{at.y + dy, at.x + dx};
+                if (c.y > 0 && c.x > 0 && c.y < dg.height - 1 && c.x < dg.width - 1 && dg.floor[c.y][c.x].feature_id <= MAX_CAVE_FLOOR &&
+                    dg.floor[c.y][c.x].treasure_id == 0 && dg.floor[c.y][c.x].creature_id == 0 && los(at, c)) {
+                    out = c;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 int mu_loot_bless(Inventory_t &item, int source, int item_level, int creature_level, MuSession *owner, int min_tier) {
     if (!eligible(item)) {
         return MU_COMMON;
@@ -391,7 +414,10 @@ void mu_loot_drops(int treasure_before, Coord_t const &center, int source, int c
             if (id < treasure_before || id >= game.treasure.current_id || !eligible(game.treasure.list[id])) {
                 continue;
             }
-            int tier = mu_loot_bless(game.treasure.list[id], source, item_level, creature_level, s, first ? MU_EPIC : MU_COMMON);
+            int tier = mu_items_drop(game.treasure.list[id], source, depth); // a custom item (items.cpp)?
+            if (tier < 0) {
+                tier = mu_loot_bless(game.treasure.list[id], source, item_level, creature_level, s, first ? MU_EPIC : MU_COMMON);
+            }
             first = false;
             if (tier >= MU_RARE) {
                 // it glows: seen (and remembered) even in the dark
@@ -522,34 +548,23 @@ bool mu_loot_command(MuSession *s, std::string const &cmd, std::string const &ar
     return false;
 }
 
-std::string mu_loot_admin(MuSession *s, std::string const &arg) {
-    int tier = MU_RARITY_COUNT;
-    for (int t = MU_UNCOMMON; t < MU_RARITY_COUNT; t++) {
-        std::string name = TIERS[t].name;
-        for (char &c : name) {
+int mu_rarity_by_name(std::string const &name) {
+    for (int t = MU_COMMON; t < MU_RARITY_COUNT; t++) {
+        std::string have = TIERS[t].name;
+        for (char &c : have) {
             c = (char) tolower((unsigned char) c);
         }
-        if (arg == name || arg == std::to_string(t)) {
-            tier = t;
+        if (name == have || name == std::to_string(t)) {
+            return t;
         }
     }
-    if (tier == MU_RARITY_COUNT || s->level == nullptr || s->level->depth == 0) {
-        return "Use: /makeloot uncommon|rare|epic|legendary (in the dungeon)";
-    }
+    return -1;
+}
+
+bool mu_loot_place_tier(int tier, Coord_t const &near) {
     Coord_t spot{0, 0};
-    for (int r = 1; r <= 3 && spot.y == 0; r++) {
-        for (int dy = -r; dy <= r && spot.y == 0; dy++) {
-            for (int dx = -r; dx <= r && spot.y == 0; dx++) {
-                Coord_t c{py.pos.y + dy, py.pos.x + dx};
-                if (c.y > 0 && c.x > 0 && c.y < dg.height - 1 && c.x < dg.width - 1 && dg.floor[c.y][c.x].feature_id <= MAX_CAVE_FLOOR &&
-                    dg.floor[c.y][c.x].treasure_id == 0 && dg.floor[c.y][c.x].creature_id == 0 && los(py.pos, c)) {
-                    spot = c;
-                }
-            }
-        }
-    }
-    if (spot.y == 0) {
-        return "No free floor beside you.";
+    if (tier < MU_COMMON || tier >= MU_RARITY_COUNT || !mu_loot_spot_near(near, 3, spot)) {
+        return false;
     }
     int id = popt();
     Inventory_t &item = game.treasure.list[id];
@@ -561,14 +576,29 @@ std::string mu_loot_admin(MuSession *s, std::string const &arg) {
     }
     if (!eligible(item)) {
         pusht((uint8_t) id);
-        return "Nothing to make here; try again.";
+        return false;
     }
     magicTreasureMagicalAbility(id, dg.current_level);
-    make_rare(item, tier, dg.current_level);
+    if (tier > MU_COMMON) {
+        make_rare(item, tier, dg.current_level);
+    }
     dg.floor[spot.y][spot.x].treasure_id = (uint8_t) id;
     dg.floor[spot.y][spot.x].field_mark = true;
     dungeonLiteSpot(spot);
-    muFxLoot(spot, tier);
+    if (tier > MU_COMMON) {
+        muFxLoot(spot, tier);
+    }
+    return true;
+}
+
+std::string mu_loot_admin(MuSession *s, std::string const &arg) {
+    int tier = mu_rarity_by_name(arg);
+    if (tier <= MU_COMMON || s->level == nullptr || s->level->depth == 0) {
+        return "Use: /makeloot uncommon|rare|epic|legendary (in the dungeon)";
+    }
+    if (!mu_loot_place_tier(tier, py.pos)) {
+        return "No room beside you (or nothing to make here); try again.";
+    }
     return std::string(tier == MU_EPIC || tier == MU_UNCOMMON ? "An " : "A ") + TIERS[tier].name + " item appears beside you.";
 }
 
@@ -610,8 +640,14 @@ void muItemCarried(Inventory_t &item) {
 }
 
 void muFloorItem(Coord_t const &coord, int treasure_id) {
-    if (!dropping && dg.current_level > 0 &&
-        mu_loot_bless(game.treasure.list[treasure_id], MU_LOOT_FLOOR, dg.current_level, dg.current_level, nullptr) >= MU_RARE) {
+    if (dropping || dg.current_level == 0 || !eligible(game.treasure.list[treasure_id])) {
+        return;
+    }
+    int tier = mu_items_drop(game.treasure.list[treasure_id], MU_LOOT_FLOOR, dg.current_level);
+    if (tier < 0) {
+        tier = mu_loot_bless(game.treasure.list[treasure_id], MU_LOOT_FLOOR, dg.current_level, dg.current_level, nullptr);
+    }
+    if (tier >= MU_RARE) {
         dg.floor[coord.y][coord.x].field_mark = true; // it glows in the dark
     }
 }

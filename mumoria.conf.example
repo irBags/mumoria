@@ -28,3 +28,7 @@ irc_nick = Mumoria
 # Shared with the P3OL server: it signs "name:expiry" so an AOL member logs
 # in as their screen name without a password (type token:<token> at login).
 aol_token_secret =
+
+# Lua scripts: every *.lua here is loaded at start and on /reload
+# (scripts/README.md is the guide).
+scripts_dir = scripts

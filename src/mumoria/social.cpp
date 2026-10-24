@@ -4,7 +4,9 @@
 // reached from muCommand, inside the engine). Chat lines go to the chat pane
 // under Umoria's screen (vterm.c), which any thread may write.
 
+#include "items.h"
 #include "loot.h"
+#include "script.h"
 #include "raid.h"
 #include "social.h"
 
@@ -1130,6 +1132,11 @@ static bool moderate(MuSession *s, const std::string &cmd, const std::vector<std
     } else if (cmd == "raid" && role >= 2) {
         say(s, mu_raid_admin(s, arg));
         mu_db_audit(s->account.name, "raid", std::to_string(s->level->depth).c_str(), arg.c_str());
+    } else if ((cmd == "makeitem" || cmd == "items") && role >= 2) {
+        std::string all = arg + (rest.empty() ? "" : " " + rest);
+        (void) mu_items_command(s, cmd, all);
+    } else if ((cmd == "reload" || cmd == "scripts") && role >= 2) {
+        (void) mu_script_admin(s, cmd);
     } else if (cmd == "makeloot" && role >= 2) {
         say(s, mu_loot_admin(s, lower(arg)));
         mu_db_audit(s->account.name, "makeloot", std::to_string(s->level->depth).c_str(), arg.c_str());
@@ -1160,7 +1167,6 @@ static void help(MuSession *s) {
         "  '  then /g text     guild chat         /p text   party chat",
         "  '  then /t name msg private message    /r msg    reply",
         "  \"  then a direction attack a player (both need PvP on; never in town)",
-        "",
         "  /who                who is in the game",
         "  /invite name        invite to your party;  /accept  /decline",
         "  /leave  /party      leave, or list your party;  /pkick name",
@@ -1169,9 +1175,7 @@ static void help(MuSession *s) {
         "  /pvp [on|off]       player fighting; changed once a day",
         "  /guild ...          create join leave invite kick promote demote",
         "                      motd rank shield turns members disband",
-        "  /loot  /legends     your rare finds; the latest Epic and Legendary ones",
-        "  /item a, /item worn an item's rarity, the level it needs, its powers",
-        "",
+        "  /loot /legends /item a|worn  your finds, the latest great ones, an item",
         "  Town buildings: 7 Bank, 8 Guild Hall, 9 Auction House",
         "  Raids: a raid gate 0 on every fifth level (250 ft, 500 ft...); bring a party",
     };
@@ -1180,7 +1184,11 @@ static void help(MuSession *s) {
     }
     if (s->account.role >= 2) {
         lines.push_back("  Admin: /ban /unban /role /broadcast /summon /spawnboss /raid [lord] /makeloot");
-        lines.push_back("         /save /shutdown /resetlevel, wizard mode ^W");
+        lines.push_back("         /makeitem [id] /items /reload /scripts /save /shutdown /resetlevel, ^W");
+    }
+    std::string extra = mu_script_command_list();
+    if (!extra.empty()) {
+        lines.insert(lines.begin() + 17, "  More: " + extra.substr(0, 70)); // the scripts' commands
     }
     MuSafePrompt safe;
     clearScreen();
@@ -1266,7 +1274,7 @@ void mu_social_command(MuSession *s, const std::string &line) {
         help(s);
     } else if (mu_loot_command(s, cmd, rest)) {
         // loot.cpp: /loot /legends /item
-    } else if (!moderate(s, cmd, w)) {
+    } else if (!moderate(s, cmd, w) && !mu_script_command(s, cmd, rest)) {
         say(s, "Unknown command. /help lists them.");
     }
     if (cmd == "accept" || cmd == "leave" || cmd == "pkick" || cmd == "guild") {

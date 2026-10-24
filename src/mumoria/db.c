@@ -112,6 +112,17 @@ static const char *SCHEMA_V5 =
     "CREATE INDEX loot_log_character ON loot_log (character, at);"
     "CREATE INDEX loot_log_tier ON loot_log (tier, at);";
 
+// Custom items (items.cpp), by admins and scripts, and what scripts keep
+// between runs (script.cpp: mu.set / mu.get).
+static const char *SCHEMA_V6 =
+    "CREATE TABLE custom_item (id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, base INTEGER NOT NULL,"
+    " tier INTEGER NOT NULL, to_hit INTEGER NOT NULL DEFAULT 0, to_damage INTEGER NOT NULL DEFAULT 0, to_ac INTEGER NOT NULL DEFAULT 0,"
+    " dice INTEGER NOT NULL DEFAULT 0, sides INTEGER NOT NULL DEFAULT 0, bonus INTEGER NOT NULL DEFAULT 0, flags INTEGER NOT NULL DEFAULT 0,"
+    " min_depth INTEGER NOT NULL DEFAULT 1, max_depth INTEGER NOT NULL DEFAULT 127, drops_from INTEGER NOT NULL DEFAULT 1,"
+    " one_in INTEGER NOT NULL DEFAULT 0, slot INTEGER NOT NULL UNIQUE, enabled INTEGER NOT NULL DEFAULT 1, source TEXT NOT NULL,"
+    " created_by TEXT, created_at INTEGER NOT NULL);"
+    "CREATE TABLE script_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);";
+
 static int exec(const char *sql) {
     char *err = NULL;
     if (sqlite3_exec(db, sql, NULL, NULL, &err) != SQLITE_OK) {
@@ -160,6 +171,9 @@ int mu_db_open(const char *path) {
     }
     if (rc == 0 && version < 5) {
         rc = exec(SCHEMA_V5) != 0 || exec("PRAGMA user_version = 5") != 0; // loot rarity
+    }
+    if (rc == 0 && version < 6) {
+        rc = exec(SCHEMA_V6) != 0 || exec("PRAGMA user_version = 6") != 0; // custom items, scripts
     }
     if (rc != 0) {
         exec("ROLLBACK");

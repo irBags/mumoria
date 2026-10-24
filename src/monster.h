@@ -20,7 +20,9 @@ typedef struct {
     uint8_t stunned_amount;
     uint8_t confused_amount;
 #ifdef MUMORIA
-    uint8_t mu_boss; // a Mumoria boss (not in save files)
+    uint8_t mu_boss;   // a Mumoria boss (not in save files)
+    uint8_t mu_script; // a script's boss (script.cpp): its key's number + 1
+    uint8_t mu_phase;  // the script's own count (its boss fight's phase)
 #endif
 } Monster_t;
 

@@ -521,7 +521,7 @@ DungeonObject_t game_objects[MAX_OBJECTS_IN_GAME] = {
     {"",                              0x00000000L, TV_NOTHING,  ' ', 0, 0, 0, 0,   0, 0, 0, 0, 0, {0, 0}, 0}, // 419
 };
 
-const char *special_item_names[SpecialNameIds::SN_ARRAY_SIZE] = {
+const char *special_item_names[SN_TABLE_SIZE] = {
     CNIL,                "(R)",              "(RA)",
     "(RF)",              "(RC)",             "(RL)",
     "(HA)",              "(DF)",             "(SA)",

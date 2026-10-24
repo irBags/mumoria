@@ -5,6 +5,7 @@
 #include "auth.h"
 #include "boss.h"
 #include "raid.h"
+#include "script.h"
 #include "mu_config.h"
 #include "session.h"
 #include "social.h"
@@ -575,6 +576,7 @@ static void enter_level(MuSession *s, MuLevel *L) {
         mu_boss_announce(s, L);
     }
     mu_raid_announce(s, L);
+    mu_script_enter(s, L); // script.cpp
     mu_poke_level(L, s);
 }
 
@@ -798,6 +800,10 @@ const char *mu_depth_name(int depth, char *buf, size_t max) {
 }
 
 // --- engine hooks about other players ------------------------------------------
+
+// Levels, stores, the bank and the auction house keep these as raw bytes.
+static_assert(sizeof(Inventory_t) == 44, "Inventory_t changed size: saved levels and stores would no longer load");
+static_assert(sizeof(Monster_t) == 24, "Monster_t changed size: saved levels would no longer load");
 
 MuLevel *mu_level_loaded() {
     return loaded_level;
