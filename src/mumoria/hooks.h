@@ -59,6 +59,11 @@ void muPlaceTownBuildings();
 bool muWizardAllowed();
 // A free floor square, not under anyone.
 void muFindSpot(Coord_t &coord);
+// Moves the loaded player's map panel to show coord (ui.cpp); draws nothing.
+void muPanelFollow(Coord_t coord);
+// Umoria drew off the screen (ui_io.cpp), where it would abort: logged with
+// a backtrace, and the drawing is skipped rather than ending the server.
+void muOffScreen(const char *what, Coord_t coord);
 // Umoria's 1 in MON_CHANCE_OF_NEW, divided by the number of players and
 // parties exploring the level (never below 1 in 40). The town keeps its own.
 int muNewMonsterChance();

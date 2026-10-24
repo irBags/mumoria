@@ -164,9 +164,17 @@ void moveCursor(Coord_t coord) {
     (void) move(coord.y, coord.x);
 }
 
+// Mumoria: drawing off the screen is logged and skipped (hooks.h); one
+// player's misdrawn square must not end everyone's game.
+#ifdef MUMORIA
+#define OFF_SCREEN(what, coord) muOffScreen((what), (coord))
+#else
+#define OFF_SCREEN(what, coord) abort()
+#endif
+
 void addChar(char ch, Coord_t coord) {
     if (mvaddch(coord.y, coord.x, ch) == ERR) {
-        abort();
+        OFF_SCREEN("addChar", coord);
     }
 }
 
@@ -182,7 +190,7 @@ void putString(const char *out_str, Coord_t coord) {
     str[79 - coord.x] = '\0';
 
     if (mvaddstr(coord.y, coord.x, str) == ERR) {
-        abort();
+        OFF_SCREEN("putString", coord);
     }
 }
 
@@ -214,7 +222,7 @@ void panelMoveCursor(Coord_t coord) {
     coord.x -= dg.panel.col_prt;
 
     if (move(coord.y, coord.x) == ERR) {
-        abort();
+        OFF_SCREEN("panelMoveCursor", coord);
     }
 }
 
@@ -231,7 +239,7 @@ void panelPutTile(char ch, Coord_t coord) {
     coord.x -= dg.panel.col_prt;
 
     if (mvaddch(coord.y, coord.x, ch) == ERR) {
-        abort();
+        OFF_SCREEN("panelPutTile", coord);
     }
 #ifdef MUMORIA
     mu_vt_set_attr(mu_vt_current, 0);

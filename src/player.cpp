@@ -1381,6 +1381,13 @@ void playerCloseDoor() {
 
     if (tile.treasure_id != 0) {
         if (item.category_id == TV_OPEN_DOOR) {
+#ifdef MUMORIA
+            // not on another player standing in the doorway
+            if (tile.creature_id == 0 && muOtherPlayerAt(coord)) {
+                printMessage((std::string(muOtherPlayerNameAt(coord)) + " is in the way.").c_str());
+                game.player_free_turn = true;
+            } else
+#endif
             if (tile.creature_id == 0) {
                 if (item.misc_use == 0) {
                     inventoryItemCopyTo(config::dungeon::objects::OBJ_CLOSED_DOOR, item);

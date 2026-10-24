@@ -167,11 +167,15 @@ static void save_player(MuSession *s) {
 }
 
 // Puts the loaded player on their square, moving them if a monster took it.
-static void stand_player() {
+// Their map panel follows them: it once stayed behind after two such moves,
+// and the next redraw put the cursor off the screen, where Umoria aborts.
+static void stand_player(MuSession *s) {
     if (!in_level(py.pos) || dg.floor[py.pos.y][py.pos.x].creature_id > 1 || dg.floor[py.pos.y][py.pos.x].feature_id >= MIN_CLOSED_SPACE) {
         Coord_t spot = py.pos;
         muFindSpot(spot);
         py.pos = spot;
+        muPanelFollow(py.pos);
+        s->view_stale = true; // their map is redrawn at the prompt
     }
     dg.floor[py.pos.y][py.pos.x].creature_id = 1;
 }
@@ -261,7 +265,7 @@ static void load_player(MuSession *s) {
                 dg.floor[y][x].temporary_light = false;
             }
         }
-        stand_player();
+        stand_player(s);
         light_lamps(s);
         for (int i = config::monsters::MON_MIN_INDEX_ID; i < next_free_monster_id; i++) {
             monsters[i].distance_from_player = (uint8_t) coordDistanceBetween(py.pos, monsters[i].pos);

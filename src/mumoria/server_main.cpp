@@ -10,6 +10,9 @@
 #include "social.h"
 
 #include <csignal>
+#include <cstring>
+#include <execinfo.h>
+#include <fcntl.h>
 #include <fstream>
 #include <map>
 #include <unistd.h>
@@ -92,6 +95,67 @@ static void *timer_thread(void *) {
     return nullptr;
 }
 
+// A crash (abort, segfault) writes where it happened to stderr and to
+// mumoria-crash.log, then dies as it would have; so does a drawing off the
+// screen (muOffScreen), which is skipped instead. Resolve the "(+0x...)"
+// offsets with: addr2line -Cfie mumoria-server 0x...
+static void crash_write(int fd, const char *s) {
+    ssize_t n = write(fd, s, strlen(s));
+    (void) n;
+}
+
+// "=== mumoria <kind> <time>: <what> ===" and the backtrace, to both
+static void log_trace(const char *kind, const char *what) {
+    void *frames[64];
+    int n = backtrace(frames, 64);
+    char head[96];
+    time_t now = time(nullptr);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+    strftime(head, sizeof(head), " %Y-%m-%d %H:%M:%S: ", &tm_now);
+    int log = open("mumoria-crash.log", O_WRONLY | O_CREAT | O_APPEND, 0644);
+    for (int fd : {2, log}) {
+        if (fd < 0) {
+            continue;
+        }
+        crash_write(fd, "\n=== mumoria ");
+        crash_write(fd, kind);
+        crash_write(fd, head);
+        crash_write(fd, what);
+        crash_write(fd, " ===\n");
+        backtrace_symbols_fd(frames, n, fd);
+    }
+    if (log >= 0) {
+        close(log);
+    }
+}
+
+static void crash_handler(int sig) {
+    log_trace("crash", strsignal(sig));
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+void muOffScreen(const char *what, Coord_t coord) {
+    static int told = 0;
+    if (told >= 20) {
+        return; // enough to find it by
+    }
+    told++;
+    char line[200];
+    snprintf(line, sizeof(line), "%s at screen row %d col %d, off the screen (player at y=%d x=%d, map rows %d-%d cols %d-%d); skipped", what,
+             coord.y, coord.x, py.pos.y, py.pos.x, dg.panel.top, dg.panel.bottom, dg.panel.left, dg.panel.right);
+    log_trace("bug", line);
+}
+
+static void catch_crashes() {
+    void *warm[1];
+    backtrace(warm, 1); // loads libgcc now, not inside the handler
+    for (int sig : {SIGABRT, SIGSEGV, SIGBUS, SIGFPE, SIGILL}) {
+        signal(sig, crash_handler);
+    }
+}
+
 static void *signal_thread(void *arg) {
     auto *set = (sigset_t *) arg;
     int sig = 0;
@@ -169,6 +233,8 @@ int main(int argc, char *argv[]) {
     if (!admin.empty()) {
         return create_admin(admin.c_str());
     }
+
+    catch_crashes();
 
     // the signals go to one thread, which shuts the server down cleanly
     static sigset_t set;

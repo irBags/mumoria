@@ -971,7 +971,7 @@ bool monsterMultiply(Coord_t coord, int creature_id, int monster_id) {
         if (coordInBounds(position) && (position.y != coord.y || position.x != coord.x)) {
             Tile_t const &tile = dg.floor[position.y][position.x];
 
-            if (tile.feature_id <= MAX_OPEN_SPACE && tile.treasure_id == 0 && tile.creature_id != 1) {
+            if (tile.feature_id <= MAX_OPEN_SPACE && tile.treasure_id == 0 && tile.creature_id != 1 MU_ONLY(&&!muOtherPlayerAt(position))) {
                 // Creature there already?
                 if (tile.creature_id > 1) {
                     // Some critters are cannibalistic!

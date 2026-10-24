@@ -170,6 +170,7 @@ void monsterPlaceNewWithinDistance(int number, int distance_from_source, bool sl
         } while (dg.floor[position.y][position.x].feature_id >= MIN_CLOSED_SPACE || //
                  dg.floor[position.y][position.x].creature_id != 0 ||               //
                  coordDistanceBetween(position, py.pos) <= distance_from_source     //
+                 MU_ONLY(|| muOtherPlayerAt(position))                              // nor on another player
         );
 
         int l = monsterGetOneSuitableForLevel(dg.current_level);
@@ -196,7 +197,7 @@ static bool placeMonsterAdjacentTo(int monster_id, Coord_t &coord, bool slp) {
         position.x = coord.x - 2 + randomNumber(3);
 
         if (coordInBounds(position)) {
-            if (dg.floor[position.y][position.x].feature_id <= MAX_OPEN_SPACE && dg.floor[position.y][position.x].creature_id == 0) {
+            if (dg.floor[position.y][position.x].feature_id <= MAX_OPEN_SPACE && dg.floor[position.y][position.x].creature_id == 0 MU_ONLY(&&!muOtherPlayerAt(position))) {
                 // Place_monster() should always return true here.
                 if (!monsterPlaceNew(position, monster_id, slp)) {
                     return false;

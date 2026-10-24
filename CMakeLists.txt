@@ -330,6 +330,9 @@ if (NOT WIN32)
     add_executable(mumoria-server ${mumoria_engine_files} ${mumoria_files})
     target_compile_definitions(mumoria-server PRIVATE MUMORIA)
     target_link_libraries(mumoria-server mumoria-lua Threads::Threads ${SQLITE3_LIBRARY} m)
+    # crash backtraces (server_main.cpp): function names, and file:line via addr2line
+    set_target_properties(mumoria-server PROPERTIES ENABLE_EXPORTS ON)
+    target_compile_options(mumoria-server PRIVATE -g)
 
     add_executable(mumoria-client client/mumoria_client.c)
 endif ()

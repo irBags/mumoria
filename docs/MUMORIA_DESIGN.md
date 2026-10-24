@@ -695,6 +695,11 @@ them: `port`, `db`, `guild_cost`, `party_gold_per_level`, `irc_host`,
 `irc_port`, `irc_channel`, `irc_nick`, `aol_token_secret`, `scripts_dir`.
 Lua comes with the source (`src/lua`): nothing to install.
 
+A crash writes a backtrace to the terminal and to `mumoria-crash.log` in the
+directory the server runs from (`addr2line -Cfie mumoria-server 0x...`
+turns its `+0x...` offsets into source lines). Umoria aborts when it draws
+off the screen; the server logs that there as a "bug" and carries on.
+
 Without root, ncurses can be built from source into `~/local`
 (`./configure --prefix=$HOME/local --enable-overwrite --without-cxx-binding`,
 then link `libncurses.a` to `libncursesw.a`); CMake looks in `~/local` by
@@ -788,6 +793,14 @@ of the following against the built server:
   its demons gone, the 4-hour cool-down; "killed by a Hellspawn" in the
   death message. Not tested: starting by itself, failing (time out, the
   town left), stepping on the portal, the newcomers' warning
+
+* a crash in the dungeon (2026-10-24): a monster that bred or was summoned
+  onto the square of a player who was not loaded moved that player on, but
+  not their map; twice, and their next redraw put the cursor off the screen
+  (Umoria's `abort()`). Reproduced with a test-only command dropping
+  monsters on an idle player (the server died); fixed, 224 drops and no
+  crash. Umoria's breeding, summoning and new monsters now avoid players'
+  squares, and a door does not close on one
 
 ## 6. Not done yet
 

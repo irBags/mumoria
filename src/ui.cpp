@@ -70,6 +70,17 @@ bool coordOutsidePanel(Coord_t coord, bool force) {
     return false;
 }
 
+#ifdef MUMORIA
+// The panel that shows coord, worked out without drawing or stopping a run:
+// for a player moved while another was loaded (world.cpp stand_player).
+void muPanelFollow(Coord_t coord) {
+    bool find_bound = config::options::find_bound;
+    config::options::find_bound = false;
+    (void) coordOutsidePanel(coord, false);
+    config::options::find_bound = find_bound;
+}
+#endif
+
 // Is the given coordinate within the screen panel boundaries -RAK-
 bool coordInsidePanel(Coord_t coord) {
     bool valid_y = coord.y >= dg.panel.top && coord.y <= dg.panel.bottom;
