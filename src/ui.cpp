@@ -654,6 +654,14 @@ void changeCharacterName() {
     printCharacter();
 
     while (!flag) {
+#ifdef MUMORIA
+        // No <f>ile (nothing is written on the server) and no <c>hange: a
+        // name is chosen once, unique, when the character is made (session.cpp).
+        putStringClearToEOL("[press any key]", Coord_t{21, 2});
+        (void) getKeyInput();
+        (void) temp;
+        return;
+#endif
         putStringClearToEOL("<f>ile character description. <c>hange character name.", Coord_t{21, 2});
 
         switch (getKeyInput()) {

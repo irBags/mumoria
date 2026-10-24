@@ -1482,6 +1482,12 @@ static void commandSaveAndExit() {
             printMessage("Use <Control>-K when you are ready to quit.");
         }
     } else {
+#ifdef MUMORIA
+        // the server keeps the character: saved, and back to the character
+        // menu (session.cpp play). Umoria's way below ends in endGame(),
+        // which once recorded every ^X as a death.
+        muExitProgram("exit");
+#endif
         (void) strcpy(game.character_died_from, "(saved)");
         printMessage("Saving game...");
 

@@ -841,6 +841,14 @@ bool loadGame(bool &generate) {
             goto error;
         }
 
+#ifdef MUMORIA
+        // The turn belongs to the level (world.cpp), not the character. The
+        // old ^X left saveChar's -1 mark on a level, and a second ^X there
+        // before a turn passed saved it, which Umoria refuses as bad data.
+        if (dg.game_turn < 0) {
+            dg.game_turn = 0;
+        }
+#endif
         if (dg.game_turn < 0) {
         error:
             ok = false; // Assume bad data.

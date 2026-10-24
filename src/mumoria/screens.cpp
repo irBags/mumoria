@@ -173,6 +173,155 @@ static std::vector<Stored> stored(const char *sql, int64_t owner) {
     return out;
 }
 
+// How many of a stack of `have`; Enter takes them all.
+static bool ask_count(const char *verb, int have, int &n) {
+    std::string prompt = std::string(verb) + " how many? (1-" + std::to_string(have) + ", Enter for all)";
+    putStringClearToEOL(prompt, Coord_t{0, 0});
+    char buf[8] = {0};
+    if (!getStringInput(buf, Coord_t{0, (int) prompt.size() + 1}, 4)) {
+        return false;
+    }
+    if (buf[0] == '\0') {
+        n = have;
+        return true;
+    }
+    char *end = nullptr;
+    long v = strtol(buf, &end, 10);
+    if (end == buf || *end != '\0' || v < 1 || v > have) {
+        printMessage(("Between 1 and " + std::to_string(have) + ", please.").c_str());
+        return false;
+    }
+    n = (int) v;
+    return true;
+}
+
+// n of a pack slot's stack: the whole slot, or n split off it.
+static Inventory_t take_count(int slot, int n) {
+    if (n >= py.inventory[slot].items_count) {
+        return take_slot(slot);
+    }
+    Inventory_t part = py.inventory[slot];
+    part.items_count = (uint8_t) n;
+    py.inventory[slot].items_count -= (uint8_t) n;
+    py.pack.weight -= part.weight * n;
+    py.flags.status |= config::player::status::PY_STR_WGT;
+    return part;
+}
+
+// The same thing but for how many there are: one stack in the pack would hold both.
+static bool same_kind(Inventory_t a, Inventory_t b) {
+    a.items_count = b.items_count = 0;
+    return inventoryItemStackable(a) && memcmp(&a, &b, sizeof(a)) == 0;
+}
+
+// A vault: the Bank's (bank_item, by account) or a guild's (guild_vault).
+// Every change names the stack as it was read (blob = ?), so two people at
+// one guild vault cannot both take the same things.
+struct Vault {
+    MuSession *s;
+    bool guild;
+    const char *full;
+
+    std::string table() const {
+        return guild ? "guild_vault" : "bank_item";
+    }
+    std::string owner_col() const {
+        return guild ? "guild" : "account";
+    }
+    int64_t owner() const {
+        return guild ? s->guild_id : s->account.id;
+    }
+    void ledger(const char *what, std::string const &text) const {
+        mu_db_ledger(s->account.id, s->char_name.c_str(), (std::string(guild ? "guild-" : "bank-") + what).c_str(), 0, text.c_str(),
+                     guild ? std::to_string(s->guild_id).c_str() : "");
+    }
+};
+
+// From the pack into the vault: some of a stack, or all; onto an identical
+// stack already there if there is one.
+static void vault_store(Vault const &v, std::vector<Stored> const &items, int slots) {
+    int slot = 0;
+    if (!pick_pack_item("Store which item?", slot)) {
+        return;
+    }
+    int have = py.inventory[slot].items_count, n = have;
+    if (have > 1 && !ask_count("Store", have, n)) {
+        return;
+    }
+    Inventory_t part = py.inventory[slot];
+    part.items_count = (uint8_t) n;
+    Stored const *onto = nullptr;
+    for (Stored const &st : items) {
+        if (onto == nullptr && same_kind(st.item, part) && st.item.items_count + n < 256) {
+            onto = &st;
+        }
+    }
+    if (onto == nullptr && (int) items.size() >= slots) {
+        printMessage(v.full);
+        return;
+    }
+    std::string text;
+    bool ok = econ(v.s, [&] {
+        Inventory_t item = take_count(slot, n);
+        text = describe(item);
+        if (onto != nullptr) {
+            Inventory_t joined = onto->item;
+            joined.items_count = (uint8_t) (joined.items_count + n);
+            std::string sql = "UPDATE " + v.table() + " SET blob = ?, item = ? WHERE id = ? AND " + v.owner_col() + " = ? AND blob = ?";
+            return mu_db_run(sql.c_str(), "bsiib", &joined, (int) sizeof(joined), describe(joined).c_str(), onto->id, v.owner(), &onto->item,
+                             (int) sizeof(onto->item)) == 1;
+        }
+        if (v.guild) {
+            return mu_db_run("INSERT INTO guild_vault (guild, blob, item, deposited_by, at) VALUES (?, ?, ?, ?, ?)", "ibssi", v.owner(), &item,
+                             (int) sizeof(item), text.c_str(), v.s->char_name.c_str(), (int64_t) time(nullptr)) == 1;
+        }
+        return mu_db_run("INSERT INTO bank_item (account, blob, item, at) VALUES (?, ?, ?, ?)", "ibsi", v.owner(), &item, (int) sizeof(item),
+                         text.c_str(), (int64_t) time(nullptr)) == 1;
+    });
+    if (ok) {
+        v.ledger("store", text);
+    } else {
+        printMessage("That has just changed. Look again.");
+    }
+}
+
+// From the vault into the pack: some of a stack, or all.
+static void vault_retrieve(Vault const &v, Stored const &st) {
+    int have = st.item.items_count, n = have;
+    if (have > 1 && !ask_count("Retrieve", have, n)) {
+        return;
+    }
+    Inventory_t part = st.item;
+    part.items_count = (uint8_t) n;
+    if (!inventoryCanCarryItemCount(part)) {
+        printMessage("You cannot carry that many items.");
+        return;
+    }
+    bool ok = econ(v.s, [&] {
+        std::string where = " WHERE id = ? AND " + v.owner_col() + " = ? AND blob = ?";
+        bool changed;
+        if (n == have) {
+            changed = mu_db_run(("DELETE FROM " + v.table() + where).c_str(), "iib", st.id, v.owner(), &st.item, (int) sizeof(st.item)) == 1;
+        } else {
+            Inventory_t rest = st.item;
+            rest.items_count = (uint8_t) (have - n);
+            changed = mu_db_run(("UPDATE " + v.table() + " SET blob = ?, item = ?" + where).c_str(), "bsiib", &rest, (int) sizeof(rest),
+                                describe(rest).c_str(), st.id, v.owner(), &st.item, (int) sizeof(st.item)) == 1;
+        }
+        if (!changed) {
+            return false;
+        }
+        Inventory_t item = part;
+        inventoryCarryItem(item);
+        return true;
+    });
+    if (ok) {
+        v.ledger("retrieve", describe(part));
+    } else {
+        printMessage("That has just changed. Look again.");
+    }
+}
+
 // --- the Bank (7) ---------------------------------------------------------------
 
 static void bank_screen(MuSession *s) {
@@ -193,7 +342,6 @@ static void bank_screen(MuSession *s) {
             return;
         }
         int64_t amount = 0;
-        int slot = 0;
         switch (cmd) {
             case 'd':
                 if (ask_number("Deposit how much gold?", amount) && amount > 0) {
@@ -225,39 +373,12 @@ static void bank_screen(MuSession *s) {
                 }
                 break;
             case 's':
-                if ((int) items.size() >= MU_BANK_SLOTS) {
-                    printMessage("Your vault is full.");
-                } else if (pick_pack_item("Store which item?", slot)) {
-                    std::string text;
-                    if (econ(s, [&] {
-                        Inventory_t item = take_slot(slot);
-                        text = describe(item);
-                        return mu_db_run("INSERT INTO bank_item (account, blob, item, at) VALUES (?, ?, ?, ?)", "ibsi", s->account.id, &item,
-                                         (int) sizeof(item), text.c_str(), (int64_t) time(nullptr)) == 1;
-                    })) {
-                        mu_db_ledger(s->account.id, s->char_name.c_str(), "bank-store", 0, text.c_str(), "");
-                    }
-                }
+                vault_store(Vault{s, false, "Your vault is full."}, items, MU_BANK_SLOTS);
                 break;
             case 'r': {
                 int i = pick_row("Retrieve which item?", top, (int) items.size());
-                if (i < 0) {
-                    break;
-                }
-                Stored const &st = items[(size_t) i];
-                if (!inventoryCanCarryItemCount(st.item)) {
-                    printMessage("You cannot carry that many items.");
-                    break;
-                }
-                if (econ(s, [&] {
-                        if (mu_db_run("DELETE FROM bank_item WHERE id = ? AND account = ?", "ii", st.id, s->account.id) != 1) {
-                            return false;
-                        }
-                        Inventory_t item = st.item;
-                        inventoryCarryItem(item);
-                        return true;
-                    })) {
-                    mu_db_ledger(s->account.id, s->char_name.c_str(), "bank-retrieve", 0, st.text.c_str(), "");
+                if (i >= 0) {
+                    vault_retrieve(Vault{s, false, ""}, items[(size_t) i]);
                 }
                 break;
             }
@@ -315,7 +436,6 @@ static void guild_screen(MuSession *s) {
             return;
         }
         int64_t amount = 0;
-        int slot = 0;
         bool may_put = (perms & GP_DEPOSIT) != 0, may_take = (perms & GP_WITHDRAW) != 0;
         switch (cmd) {
             case 'd':
@@ -350,18 +470,8 @@ static void guild_screen(MuSession *s) {
             case 's':
                 if (!may_put) {
                     printMessage("Your rank may not use the guild bank.");
-                } else if ((int) items.size() >= MU_GUILD_VAULT_SLOTS) {
-                    printMessage("The guild vault is full.");
-                } else if (pick_pack_item("Store which item?", slot)) {
-                    std::string text;
-                    if (econ(s, [&] {
-                        Inventory_t item = take_slot(slot);
-                        text = describe(item);
-                        return mu_db_run("INSERT INTO guild_vault (guild, blob, item, deposited_by, at) VALUES (?, ?, ?, ?, ?)", "ibssi", s->guild_id,
-                                         &item, (int) sizeof(item), text.c_str(), s->char_name.c_str(), (int64_t) time(nullptr)) == 1;
-                    })) {
-                        mu_db_ledger(s->account.id, s->char_name.c_str(), "guild-store", 0, text.c_str(), std::to_string(s->guild_id).c_str());
-                    }
+                } else {
+                    vault_store(Vault{s, true, "The guild vault is full."}, items, MU_GUILD_VAULT_SLOTS);
                 }
                 break;
             case 'r': {
@@ -370,23 +480,8 @@ static void guild_screen(MuSession *s) {
                     break;
                 }
                 int i = pick_row("Retrieve which item?", top, (int) items.size());
-                if (i < 0) {
-                    break;
-                }
-                Stored const &st = items[(size_t) i];
-                if (!inventoryCanCarryItemCount(st.item)) {
-                    printMessage("You cannot carry that many items.");
-                    break;
-                }
-                if (econ(s, [&] {
-                    if (mu_db_run("DELETE FROM guild_vault WHERE id = ? AND guild = ?", "ii", st.id, s->guild_id) != 1) {
-                        return false;
-                    }
-                    Inventory_t item = st.item;
-                    inventoryCarryItem(item);
-                    return true;
-                })) {
-                    mu_db_ledger(s->account.id, s->char_name.c_str(), "guild-retrieve", 0, st.text.c_str(), std::to_string(s->guild_id).c_str());
+                if (i >= 0) {
+                    vault_retrieve(Vault{s, true, ""}, items[(size_t) i]);
                 }
                 break;
             }

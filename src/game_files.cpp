@@ -96,6 +96,11 @@ void displayDeathFile(const std::string &filename) {
 // Note that the objects produced is a sampling of objects
 // which be expected to appear on that level.
 void outputRandomLevelObjectsToFile() {
+#ifdef MUMORIA
+    // a wizard's typed file name is not written on the server either
+    printMessage("Files are not written on the server.");
+    return;
+#endif
     obj_desc_t input = {0};
 
     putStringClearToEOL("Produce objects on what level?: ", Coord_t{0, 0});
@@ -358,6 +363,14 @@ static void writeInventoryToFile(FILE *inv_file) {
 
 // Print the character to a file or device -RAK-
 bool outputPlayerCharacterToFile(char *filename) {
+#ifdef MUMORIA
+    // A name a player types must never become a file on the server: the
+    // tomb's "Character record?" and the C screen's <f>ile once wrote
+    // character sheets (any path the server could write) beside it.
+    (void) filename;
+    printMessage("Character files are not written on the server.");
+    return false;
+#endif
     int fd = open(filename, O_WRONLY | O_CREAT | O_EXCL, 0644);
     if (fd < 0 && errno == EEXIST) {
         if (getInputConfirmation("Replace existing file " + std::string(filename) + "?")) {

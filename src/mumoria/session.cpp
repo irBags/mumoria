@@ -663,9 +663,6 @@ static void record_death(MuSession *s) {
 }
 
 void muEndGame() {
-    if (mu_self->level != nullptr && !game.total_winner) {
-        muSound(py.pos, "die");
-    }
     record_death(mu_self);
     throw MuSessionEnd{MuSessionEnd::Died, ""};
 }

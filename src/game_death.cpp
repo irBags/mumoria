@@ -55,7 +55,11 @@ static void printTomb() {
 retry:
     flushInputBuffer();
 
+#ifdef MUMORIA
+    putString("(ESC to abort, return to show it on screen)", Coord_t{23, 0}); // no files on the server
+#else
     putString("(ESC to abort, return to print on screen, or file name)", Coord_t{23, 0});
+#endif
     putString("Character record?", Coord_t{22, 0});
 
     vtype_t str = {'\0'};
@@ -120,6 +124,17 @@ static void kingly() {
 // What happens upon dying -RAK-
 // Handles the gravestone and top-twenty routines -RAK-
 void endGame() {
+#ifdef MUMORIA
+    // Only a death (or a winner retiring) ends a character here; any other
+    // way in is a leaving, which the server saves (session.cpp play).
+    if (!game.character_is_dead && !game.total_winner) {
+        muExitProgram("exit");
+    }
+    // the death cry as it happens, not after the tomb's key (session.cpp muEndGame)
+    if (!game.total_winner) {
+        muSound(py.pos, "die");
+    }
+#endif
     printMessage(CNIL);
 
     // flush all input
