@@ -263,6 +263,11 @@ elseif ((MSYS OR MINGW) AND NOT "$ENV{MINGW}" STREQUAL "")
 else ()
     message(STATUS "NOTE: Configuring build for macOS/Linux release...")
     set(CURSES_NEED_NCURSES TRUE)
+    # ncurses built from source without root (docs/MUMORIA_DESIGN.md section 4)
+    # lives in ~/local: look there too, so a plain `cmake -S . -B build` finds it
+    if (EXISTS "$ENV{HOME}/local/include/curses.h")
+        list(APPEND CMAKE_PREFIX_PATH "$ENV{HOME}/local")
+    endif ()
     find_package(Curses)
 endif ()
 

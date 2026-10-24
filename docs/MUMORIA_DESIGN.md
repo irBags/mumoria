@@ -683,9 +683,9 @@ Lua comes with the source (`src/lua`): nothing to install.
 
 Without root, ncurses can be built from source into `~/local`
 (`./configure --prefix=$HOME/local --enable-overwrite --without-cxx-binding`,
-then link `libncurses.a` to `libncursesw.a`) and found with
-`cmake -DCMAKE_PREFIX_PATH=$HOME/local`; that is how the WSL test box builds
-`umoria`.
+then link `libncurses.a` to `libncursesw.a`); CMake looks in `~/local` by
+itself (or another prefix with `cmake -DCMAKE_PREFIX_PATH=...`). That is how
+the WSL test box builds `umoria`.
 
 The build needs only the SQLite runtime library (`libsqlite3.so.0`), not its
 development header (`src/mumoria/sqlite3_min.h`). Without the ncurses
