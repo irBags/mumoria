@@ -94,6 +94,10 @@ character. The keys are Umoria's (`?` lists them). The multiplayer ones:
   `/invite`, `/guild`, `/trade`, `/loot`.
 * `"` then a direction: attack a player (both with PvP on).
 
+Open the terminal 120 columns wide (or more) and the chat sits in a box
+beside the map; narrower, it is under it. `/panel` changes the layout and the
+box's outline.
+
 Death is permanent, as in Umoria. Your bank and guild belong to the account.
 
 ## Where things are

@@ -951,6 +951,37 @@ static std::string describe(MuSession *t) {
            "/" + std::to_string(p.misc.max_hp) + ", " + std::to_string(p.misc.au) + " gold";
 }
 
+// /panel [side|bottom|auto] [border rounded|single|double|heavy|ascii|none]:
+// this session's chat layout and outline (mumoria.conf sets the defaults).
+static void panel_command(MuSession *s, std::string const &args) {
+    MuScreen *screen = mu_screen_of(s);
+    std::vector<std::string> w = words(args, 3);
+    int layout = screen->layout, border = screen->border;
+    bool ok = !w.empty();
+    for (size_t i = 0; i < w.size(); i++) {
+        std::string a = lower(w[i]);
+        if (a == "border" && i + 1 < w.size()) {
+            border = mu_vt_border_by_name(lower(w[++i]).c_str());
+            ok = ok && border >= 0;
+        } else if (mu_vt_layout_by_name(a.c_str()) >= 0) {
+            layout = mu_vt_layout_by_name(a.c_str());
+        } else if (mu_vt_border_by_name(a.c_str()) >= 0) {
+            border = mu_vt_border_by_name(a.c_str());
+        } else {
+            ok = false;
+        }
+    }
+    if (ok) {
+        mu_vt_set_panel(screen, layout, border < 0 ? -1 : border);
+    }
+    int shown_layout = screen->layout >= 0 ? screen->layout : mu_vt_default_layout;
+    int shown_border = screen->border >= 0 ? screen->border : mu_vt_default_border;
+    std::string size = screen->term_cols > 0 ? std::to_string(screen->term_cols) + "x" + std::to_string(screen->term_rows) : "unknown";
+    say(s, std::string(ok ? "" : "Use: /panel side|bottom|auto, /panel border rounded|single|double|heavy|ascii|none. ") + "Chat: " +
+               mu_vt_layout_name(shown_layout) + (mu_vt_side(screen) ? " (beside the map)" : " (under the map)") + ", border " +
+               mu_vt_border_name(shown_border) + "; your window " + size + ".");
+}
+
 static void who(MuSession *s) {
     std::vector<std::string> lines;
     char where[32];
@@ -964,6 +995,12 @@ static void who(MuSession *s) {
         lines.push_back(line);
     }
     say(s, std::to_string(lines.size()) + " in the game:");
+    if (mu_vt_side(mu_screen_of(s))) {
+        for (auto const &l : lines) {
+            say(s, "  " + l); // the panel is narrow and tall: one a line
+        }
+        return;
+    }
     std::string line;
     for (auto const &l : lines) {
         if (line.size() + l.size() + 2 > 78) {
@@ -1173,6 +1210,7 @@ static void help(MuSession *s) {
         "  /party turns on|off battle turns for your party (leader)",
         "  /trade name         trade with a player on your level",
         "  /pvp [on|off]       player fighting; changed once a day",
+        "  /panel side|bottom|auto, border rounded|single|double|heavy|ascii|none",
         "  /guild ...          create join leave invite kick promote demote",
         "                      motd rank shield turns members disband",
         "  /loot /legends /item a|worn  your finds, the latest great ones, an item",
@@ -1244,6 +1282,8 @@ void mu_social_command(MuSession *s, const std::string &line) {
         tell(s, s->reply_to, rest.substr(0, MU_CHAT_MAX_LEN));
     } else if (cmd == "who") {
         who(s);
+    } else if (cmd == "panel") {
+        panel_command(s, rest);
     } else if (cmd == "invite") {
         party_invite(s, rest);
     } else if (cmd == "accept") {

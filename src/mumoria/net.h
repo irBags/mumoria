@@ -40,6 +40,8 @@ typedef struct MuConn {
 
     // telnet parser state
     int tn_state;
+    unsigned char sb[16]; // a subnegotiation (NAWS: the window's size)
+    int sb_len;
     int last_cr;
     int esc_state;
 } MuConn;

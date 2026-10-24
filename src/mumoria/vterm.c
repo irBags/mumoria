@@ -10,6 +10,49 @@
 
 __thread MuScreen *mu_vt_current = NULL;
 
+int mu_vt_default_layout = MU_LAYOUT_AUTO;
+int mu_vt_default_border = MU_BORDER_ROUNDED;
+int mu_vt_border_colour = 245; // grey
+
+// The side panel's box pieces, as cell codes, and how each style draws them.
+enum { MU_BOX_H = 0x10, MU_BOX_V, MU_BOX_TL, MU_BOX_TR, MU_BOX_BL, MU_BOX_BR };
+static const char *BOX[MU_BORDER_COUNT][6] = {
+    {"\xe2\x94\x80", "\xe2\x94\x82", "\xe2\x95\xad", "\xe2\x95\xae", "\xe2\x95\xb0", "\xe2\x95\xaf"}, // rounded
+    {"\xe2\x94\x80", "\xe2\x94\x82", "\xe2\x94\x8c", "\xe2\x94\x90", "\xe2\x94\x94", "\xe2\x94\x98"}, // single
+    {"\xe2\x95\x90", "\xe2\x95\x91", "\xe2\x95\x94", "\xe2\x95\x97", "\xe2\x95\x9a", "\xe2\x95\x9d"}, // double
+    {"\xe2\x94\x81", "\xe2\x94\x83", "\xe2\x94\x8f", "\xe2\x94\x93", "\xe2\x94\x97", "\xe2\x94\x9b"}, // heavy
+    {"-", "|", "+", "+", "+", "+"},                                                                   // ascii
+    {" ", " ", " ", " ", " ", " "},                                                                   // none
+};
+static const char *BORDER_NAMES[MU_BORDER_COUNT] = {"rounded", "single", "double", "heavy", "ascii", "none"};
+static const char *LAYOUT_NAMES[3] = {"auto", "side", "bottom"};
+
+int mu_vt_layout_by_name(const char *name) {
+    for (int i = 0; i < 3; i++) {
+        if (strcmp(name, LAYOUT_NAMES[i]) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int mu_vt_border_by_name(const char *name) {
+    for (int i = 0; i < MU_BORDER_COUNT; i++) {
+        if (strcmp(name, BORDER_NAMES[i]) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+const char *mu_vt_layout_name(int layout) {
+    return layout >= 0 && layout < 3 ? LAYOUT_NAMES[layout] : "auto";
+}
+
+const char *mu_vt_border_name(int border) {
+    return border >= 0 && border < MU_BORDER_COUNT ? BORDER_NAMES[border] : "rounded";
+}
+
 static void out_append(MuScreen *s, const char *bytes, int len) {
     if (s->overflow) {
         return;
@@ -45,6 +88,8 @@ void mu_vt_init(MuScreen *s, int wake_fd) {
     memset(s->saved, ' ', sizeof(s->saved));
     s->full_redraw = 1;
     s->wake_fd = wake_fd;
+    s->layout = s->border = -1;
+    s->chat_dirty = 1;
 }
 
 void mu_vt_free(MuScreen *s) {
@@ -149,21 +194,126 @@ void mu_vt_redraw(MuScreen *s) {
     pthread_mutex_unlock(&s->lock);
 }
 
+static int want_side(MuScreen *s) {
+    int layout = s->layout >= 0 ? s->layout : mu_vt_default_layout;
+    if (layout == MU_LAYOUT_SIDE) {
+        return 1;
+    }
+    return layout == MU_LAYOUT_AUTO && s->term_cols >= MU_SCREEN_COLS;
+}
+
+static int border_of(MuScreen *s) {
+    int b = s->border >= 0 ? s->border : mu_vt_default_border;
+    return b >= 0 && b < MU_BORDER_COUNT ? b : MU_BORDER_ROUNDED;
+}
+
+// The side panel's text width: inside the box, a space either side.
+#define SIDE_TEXT (MU_PANEL_COLS - 4)
+
+// The last `want` rows of the chat, wrapped at width (going on rows indented
+// by two), oldest first. Returns how many.
+static int chat_rows(MuScreen *s, int width, int want, char rows[MU_ROWS][MU_COLS + 1]) {
+    int count = 0, first = s->history_n > MU_CHAT_KEEP ? s->history_n - MU_CHAT_KEEP : 0;
+    for (int n = first; n < s->history_n; n++) {
+        const char *p = s->history[n % MU_CHAT_KEEP];
+        int indent = 0;
+        do {
+            int room = width - indent;
+            int len = (int) strlen(p);
+            if (len > room) {
+                len = room;
+                while (len > room / 2 && p[len] != ' ') {
+                    len--; // break at the last space, unless it is far back
+                }
+                if (p[len] != ' ') {
+                    len = room;
+                }
+            }
+            if (count == want) {
+                memmove(rows[0], rows[1], sizeof(rows[0]) * (size_t) (want - 1));
+                count--;
+            }
+            memset(rows[count], ' ', (size_t) indent);
+            memcpy(rows[count] + indent, p, (size_t) len);
+            rows[count][indent + len] = '\0';
+            count++;
+            p += len;
+            while (*p == ' ') {
+                p++;
+            }
+            indent = 2;
+        } while (*p != '\0');
+    }
+    return count;
+}
+
+static void panel_put(MuScreen *s, int y, int x, char ch, uint32_t attr) {
+    s->panel[y][x] = ch;
+    s->panel_attr[y][x] = attr;
+}
+
+// The chat, where the layout puts it.
 static void put_chat_rows(MuScreen *s) {
-    for (int i = 0; i < MU_CHAT_ROWS; i++) {
-        int y = MU_GAME_ROWS + i;
+    int side = want_side(s);
+    int rows = MU_ROWS;
+    if (side) {
+        rows = s->term_rows > 0 ? s->term_rows : MU_GAME_ROWS;
+        rows = rows < MU_GAME_ROWS ? MU_GAME_ROWS : rows > MU_ROWS ? MU_ROWS : rows;
+    }
+    if (side != s->side || rows != s->rows_used) {
+        s->side = side;
+        s->rows_used = rows;
+        s->full_redraw = 1;
+    }
+    char text[MU_ROWS][MU_COLS + 1];
+    int want = side ? rows - 2 : MU_CHAT_ROWS;
+    int have = chat_rows(s, side ? SIDE_TEXT : MU_COLS, want, text);
+
+    for (int y = MU_GAME_ROWS; y < MU_ROWS; y++) {
         memset(s->cell[y], ' ', MU_COLS);
         memset(s->attr[y], 0, sizeof(s->attr[y]));
-        size_t n = strlen(s->chat[i]);
-        memcpy(s->cell[y], s->chat[i], n > MU_COLS ? MU_COLS : n);
     }
-    // a divider in the first chat row's place would cost a line; the
-    // pane starts straight under Umoria's last row instead
+    if (!side) {
+        // straight under Umoria's last row: a divider would cost a line
+        for (int i = 0; i < have; i++) {
+            memcpy(s->cell[MU_GAME_ROWS + i], text[i], strlen(text[i]));
+        }
+        s->chat_dirty = 0;
+        return;
+    }
+
+    uint32_t edge = mu_vt_border_colour > 0 ? MU_ATTR_FG(mu_vt_border_colour) : 0;
+    memset(s->panel, ' ', sizeof(s->panel));
+    memset(s->panel_attr, 0, sizeof(s->panel_attr));
+    for (int x = 1; x < MU_PANEL_COLS - 1; x++) {
+        panel_put(s, 0, x, MU_BOX_H, edge);
+        panel_put(s, rows - 1, x, MU_BOX_H, edge);
+    }
+    for (int y = 1; y < rows - 1; y++) {
+        panel_put(s, y, 0, MU_BOX_V, edge);
+        panel_put(s, y, MU_PANEL_COLS - 1, MU_BOX_V, edge);
+    }
+    panel_put(s, 0, 0, MU_BOX_TL, edge);
+    panel_put(s, 0, MU_PANEL_COLS - 1, MU_BOX_TR, edge);
+    panel_put(s, rows - 1, 0, MU_BOX_BL, edge);
+    panel_put(s, rows - 1, MU_PANEL_COLS - 1, MU_BOX_BR, edge);
+    const char *title = " Chat ";
+    for (int i = 0; title[i] != '\0'; i++) {
+        panel_put(s, 0, 2 + i, title[i], edge | MU_ATTR_BOLD);
+    }
+    // the newest line at the bottom of the box, as in the pane
+    for (int i = 0; i < have; i++) {
+        int y = rows - 1 - have + i;
+        memcpy(&s->panel[y][2], text[i], strlen(text[i]));
+    }
     s->chat_dirty = 0;
 }
 
-// What a cell shows: an animation over the map, else what was drawn there.
+// What a cell shows: the side panel; an animation over the map; else what was drawn there.
 static char shown_ch(MuScreen *s, int y, int x) {
+    if (x >= MU_COLS) {
+        return s->panel[y][x - MU_COLS];
+    }
     if (y < MU_GAME_ROWS && s->ov_ch[y][x] > MU_FX_TINT && s->mapcell[y][x]) {
         return s->ov_ch[y][x];
     }
@@ -171,6 +321,9 @@ static char shown_ch(MuScreen *s, int y, int x) {
 }
 
 static uint32_t shown_attr(MuScreen *s, int y, int x) {
+    if (x >= MU_COLS) {
+        return s->panel_attr[y][x - MU_COLS];
+    }
     if (y < MU_GAME_ROWS && s->ov_ch[y][x] != 0 && s->mapcell[y][x]) {
         return s->ov_attr[y][x];
     }
@@ -218,9 +371,12 @@ static void flush_locked(MuScreen *s) {
         s->full_redraw = 0;
     }
 
-    for (int y = 0; y < MU_ROWS; y++) {
+    int width = s->side ? MU_SCREEN_COLS : MU_COLS;
+    int height = s->side ? s->rows_used : MU_ROWS;
+    int style = border_of(s);
+    for (int y = 0; y < height; y++) {
         int x = 0;
-        while (x < MU_COLS) {
+        while (x < width) {
             if (same(s, y, x)) {
                 x++;
                 continue;
@@ -228,16 +384,16 @@ static void flush_locked(MuScreen *s) {
             int start = x;
             // join runs separated by a few equal cells: one jump, not several
             int end = x;
-            while (end < MU_COLS) {
+            while (end < width) {
                 if (!same(s, y, end)) {
                     end++;
                     continue;
                 }
                 int gap = 0;
-                while (end + gap < MU_COLS && gap < 4 && same(s, y, end + gap)) {
+                while (end + gap < width && gap < 4 && same(s, y, end + gap)) {
                     gap++;
                 }
-                if (end + gap >= MU_COLS || gap >= 4) {
+                if (end + gap >= width || gap >= 4) {
                     break;
                 }
                 end += gap;
@@ -248,7 +404,12 @@ static void flush_locked(MuScreen *s) {
                 char ch = shown_ch(s, y, i);
                 uint32_t look = shown_attr(s, y, i);
                 set_look(s, look);
-                out_append(s, &ch, 1);
+                if (ch >= MU_BOX_H && ch <= MU_BOX_BR) {
+                    const char *piece = BOX[style][ch - MU_BOX_H]; // UTF-8: one column
+                    out_append(s, piece, (int) strlen(piece));
+                } else {
+                    out_append(s, &ch, 1);
+                }
                 s->sent[y][i] = ch;
                 s->sent_attr[y][i] = look;
             }
@@ -282,51 +443,55 @@ void mu_vt_raw(MuScreen *s, const char *bytes, int len) {
     wake(s);
 }
 
-static void chat_row(MuScreen *s, const char *text, int len) {
-    for (int i = 0; i < MU_CHAT_ROWS - 1; i++) {
-        memcpy(s->chat[i], s->chat[i + 1], sizeof(s->chat[i]));
-    }
-    char *row = s->chat[MU_CHAT_ROWS - 1];
-    memcpy(row, text, (size_t) len);
-    row[len] = '\0';
+// Kept as said; wrapped (at a space, going on indented by two) when drawn.
+void mu_vt_chat(MuScreen *s, const char *line) {
+    pthread_mutex_lock(&s->lock);
+    char *row = s->history[s->history_n % MU_CHAT_KEEP];
+    snprintf(row, MU_CHAT_LINE, "%s", line);
     for (char *p = row; *p != '\0'; p++) {
         if ((unsigned char) *p < 32 || (unsigned char) *p > 126) {
             *p = ' ';
         }
     }
-}
-
-// Long lines wrap at a space onto further rows, indented by two.
-void mu_vt_chat(MuScreen *s, const char *line) {
-    pthread_mutex_lock(&s->lock);
-    const char *p = line;
-    int indent = 0;
-    do {
-        int room = MU_COLS - indent;
-        int len = (int) strlen(p);
-        if (len > room) {
-            len = room;
-            while (len > room / 2 && p[len] != ' ') {
-                len--; // break at the last space, unless it is far back
-            }
-            if (p[len] != ' ') {
-                len = room;
-            }
-        }
-        char buf[MU_COLS + 1];
-        memset(buf, ' ', (size_t) indent);
-        memcpy(buf + indent, p, (size_t) len);
-        chat_row(s, buf, indent + len);
-        p += len;
-        while (*p == ' ') {
-            p++;
-        }
-        indent = 2;
-    } while (*p != '\0');
+    s->history_n++;
     s->chat_dirty = 1;
     flush_locked(s);
     pthread_mutex_unlock(&s->lock);
     wake(s);
+}
+
+void mu_vt_set_size(MuScreen *s, int cols, int rows) {
+    pthread_mutex_lock(&s->lock);
+    if (cols != s->term_cols || rows != s->term_rows) {
+        s->term_cols = cols;
+        s->term_rows = rows;
+        s->chat_dirty = 1;
+        flush_locked(s);
+    }
+    pthread_mutex_unlock(&s->lock);
+    wake(s);
+}
+
+void mu_vt_set_panel(MuScreen *s, int layout, int border) {
+    pthread_mutex_lock(&s->lock);
+    s->layout = layout;
+    s->border = border;
+    s->chat_dirty = 1;
+    s->full_redraw = 1; // the outline's pieces are sent as they look
+    flush_locked(s);
+    pthread_mutex_unlock(&s->lock);
+    wake(s);
+}
+
+int mu_vt_side(MuScreen *s) {
+    pthread_mutex_lock(&s->lock);
+    int side = want_side(s);
+    pthread_mutex_unlock(&s->lock);
+    return side;
+}
+
+int mu_vt_chat_width(MuScreen *s) {
+    return mu_vt_side(s) ? SIDE_TEXT : MU_COLS;
 }
 
 // --- animations ----------------------------------------------------------------

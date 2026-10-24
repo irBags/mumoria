@@ -72,7 +72,7 @@ Mumoria: playing together              (/help in chat lists every command)
              /w world   /g guild   /p party   /t name private   /r reply
              /who   /invite name   /accept   /leave   /party turns on|off
              /guild ...   /trade name   /pvp on|off
-             /loot   /legends   /item a|worn   /help
+             /loot   /legends   /item a|worn   /panel   /help
   "  ~     Attack the player there (both need PvP on; never in the town)
 
 Town buildings 1 to 6 are Umoria's stores. They are never busy: each player

@@ -3,8 +3,10 @@
 // Umoria draws into a curses screen. On the server each session has one of
 // these instead: the engine's curses calls (mu_curses.h) write into the
 // session's grid, and mu_vt_flush() sends the client only the cells that
-// changed since the last flush, as ANSI. Rows 0-23 are Umoria's own screen;
-// rows 24 and up are the chat pane, written by any thread.
+// changed since the last flush, as ANSI. Rows 0-23, columns 0-79 are Umoria's
+// own screen. The chat, written by any thread, is a boxed panel in columns
+// 80-119 on a terminal at least 120 wide (its size comes from telnet NAWS),
+// else the rows under Umoria's (24-29).
 
 #pragma once
 
@@ -15,10 +17,27 @@
 extern "C" {
 #endif
 
-#define MU_COLS 80
+#define MU_COLS 80       // Umoria's screen
+#define MU_PANEL_COLS 40 // the chat panel beside it
+#define MU_SCREEN_COLS (MU_COLS + MU_PANEL_COLS)
 #define MU_GAME_ROWS 24
-#define MU_CHAT_ROWS 6
+#define MU_CHAT_ROWS 6 // the chat pane under it, on a narrower terminal
 #define MU_ROWS (MU_GAME_ROWS + MU_CHAT_ROWS)
+#define MU_CHAT_KEEP 64  // lines of chat kept, wrapped again when the layout changes
+#define MU_CHAT_LINE 256
+
+// Where the chat goes (mumoria.conf chat_layout; a player's /panel).
+enum { MU_LAYOUT_AUTO, MU_LAYOUT_SIDE, MU_LAYOUT_BOTTOM };
+// The side panel's outline (chat_border; /panel border).
+enum { MU_BORDER_ROUNDED, MU_BORDER_SINGLE, MU_BORDER_DOUBLE, MU_BORDER_HEAVY, MU_BORDER_ASCII, MU_BORDER_NONE, MU_BORDER_COUNT };
+// The server's defaults (server_main.cpp, from mumoria.conf).
+extern int mu_vt_default_layout;
+extern int mu_vt_default_border;
+extern int mu_vt_border_colour; // xterm 256; 0 for the terminal's own
+int mu_vt_layout_by_name(const char *name); // -1 if none
+int mu_vt_border_by_name(const char *name); // -1 if none
+const char *mu_vt_layout_name(int layout);
+const char *mu_vt_border_name(int border);
 #define MU_OUT_LIMIT (512 * 1024) // a client this far behind is dropped
 
 // A cell's look: an xterm 256-colour foreground and background, and bold.
@@ -42,18 +61,24 @@ typedef struct {
 typedef struct MuScreen {
     pthread_mutex_t lock;
     char cell[MU_ROWS][MU_COLS];
-    char sent[MU_ROWS][MU_COLS];
+    char sent[MU_ROWS][MU_SCREEN_COLS];
     char saved[MU_GAME_ROWS][MU_COLS]; // terminalSaveScreen()
     uint32_t attr[MU_ROWS][MU_COLS];
-    uint32_t sent_attr[MU_ROWS][MU_COLS];
+    uint32_t sent_attr[MU_ROWS][MU_SCREEN_COLS];
     uint32_t saved_attr[MU_GAME_ROWS][MU_COLS];
     uint32_t cur_attr;  // what mu_vt_addch writes with
     uint32_t term_attr; // what the client's terminal is set to
     int cy, cx;
     int full_redraw;
 
-    char chat[MU_CHAT_ROWS][MU_COLS + 1];
+    char history[MU_CHAT_KEEP][MU_CHAT_LINE]; // the chat's last lines, as said
+    int history_n;                            // lines ever said (history is a ring)
     int chat_dirty;
+    char panel[MU_ROWS][MU_PANEL_COLS]; // the side panel; box pieces are MU_BOX_* codes
+    uint32_t panel_attr[MU_ROWS][MU_PANEL_COLS];
+    int term_cols, term_rows; // the client's terminal (telnet NAWS); 0 if not told
+    int layout, border;       // this player's choice; -1 for the server's
+    int side, rows_used;      // the layout drawn now: the side panel?, rows in use
 
     // Which cells show the map (drawn while map_drawing > 0): animations
     // are drawn only there, so never over a menu or a list.
@@ -93,8 +118,15 @@ void mu_vt_flush(MuScreen *s);
 void mu_vt_bell(MuScreen *s);
 void mu_vt_raw(MuScreen *s, const char *bytes, int len); // telnet negotiation etc.
 
-// Adds a line at the bottom of the chat pane, scrolling it. Any thread.
+// Adds a line at the bottom of the chat, scrolling it. Any thread.
 void mu_vt_chat(MuScreen *s, const char *line);
+// The client's terminal size (telnet NAWS): the layout may change.
+void mu_vt_set_size(MuScreen *s, int cols, int rows);
+// A player's choice: layout and border, -1 for the server's.
+void mu_vt_set_panel(MuScreen *s, int layout, int border);
+// Is the chat in the side panel now? Its text width (36 or 80).
+int mu_vt_side(MuScreen *s);
+int mu_vt_chat_width(MuScreen *s);
 
 // Animations (fx.cpp makes them, the I/O thread plays them).
 int64_t mu_vt_now_ms(void);

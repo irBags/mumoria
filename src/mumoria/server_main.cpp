@@ -152,6 +152,16 @@ int main(int argc, char *argv[]) {
     mu_guild_cost = atoi(setting("guild_cost", "1000").c_str());
     mu_store_supply_percent = std::max(1, atoi(setting("store_supply_percent", "100").c_str()));
     mu_gold_level_bonus = (int) (atof(setting("party_gold_per_level", "0.5").c_str()) * 100 + 0.5);
+    // the chat: beside the map on a wide terminal (vterm.h)
+    int layout = mu_vt_layout_by_name(setting("chat_layout", "auto").c_str());
+    int border = mu_vt_border_by_name(setting("chat_border", "rounded").c_str());
+    if (layout < 0 || border < 0) {
+        fprintf(stderr, "mumoria: chat_layout is auto, side or bottom; chat_border is rounded, single, double, heavy, ascii or none\n");
+        return 1;
+    }
+    mu_vt_default_layout = layout;
+    mu_vt_default_border = border;
+    mu_vt_border_colour = std::max(0, std::min(255, atoi(setting("chat_border_colour", "245").c_str())));
 
     if (mu_db_open(db.c_str()) != 0) {
         return 1;

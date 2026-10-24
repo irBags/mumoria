@@ -29,6 +29,18 @@ irc_nick = Mumoria
 # in as their screen name without a password (type token:<token> at login).
 aol_token_secret =
 
+# The chat. On a terminal at least 120 columns wide (the client says, by
+# telnet NAWS) it is a box beside the map, in the 40 columns right of
+# Umoria's 80, as tall as the window (24 to 30 rows); narrower, it is the 6
+# rows under the map. Each player can change it for their session: /panel.
+#   chat_layout: auto (beside when it fits), side (always), bottom (never)
+#   chat_border: rounded, single, double, heavy, ascii (+-|, for terminals
+#                without UTF-8), none
+#   chat_border_colour: an xterm 256 colour; 0 for the terminal's own
+chat_layout = auto
+chat_border = rounded
+chat_border_colour = 245
+
 # Lua scripts: every *.lua here is loaded at start and on /reload
 # (scripts/README.md is the guide).
 scripts_dir = scripts

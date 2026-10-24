@@ -301,8 +301,17 @@ steps, and what stays compatible.
 ### 2.11 Chat: world, guild, party, private, and the AOL rooms
 
 * **Files:** `social.cpp` (`mu_chat_*`), `vterm.c` (the chat pane), `irc.c`.
-* **UI:** rows 24-29, below Umoria's own 24-line screen, are the chat pane, so
-  no Umoria line moves. `'` opens the chat line on the message line. Plain
+* **UI:** on a terminal at least 120 columns wide, the chat is a boxed panel
+  in columns 80-119, beside Umoria's 80, as tall as the window (24 to 30
+  rows), the newest line at the bottom. Narrower (or a client that never says
+  its size), rows 24-29 below Umoria's 24-line screen are the chat pane. No
+  Umoria line moves either way. The width comes from telnet NAWS
+  (`net.c`); a resize moves the chat and wraps its last 64 lines again
+  (`vterm.c` keeps them as said). `mumoria.conf` `chat_layout` (auto, side,
+  bottom), `chat_border` (rounded, single, double, heavy, ascii, none) and
+  `chat_border_colour` set the defaults; `/panel` changes them for a
+  session. The outline is sent as UTF-8 box drawing (ascii: `+-|`). `/who`
+  lists one player a line in the panel. `'` opens the chat line on the message line. Plain
   text goes to the level ("say"). `/w` world, `/g` guild, `/p` party,
   `/t name` private, `/r` reply. A line longer than the screen wraps onto
   further rows, indented by two. `/help` is a full page, like Umoria's `?`;
@@ -325,7 +334,7 @@ steps, and what stays compatible.
 
 ### 2.13 Networking and concurrency
 
-* TCP, telnet (`IAC WILL ECHO`, `WILL SGA`, NAWS read), and ANSI output.
+* TCP, telnet (`IAC WILL ECHO`, `WILL SGA`, `DO NAWS`: the window's size), and ANSI output.
   Any terminal works (PuTTY, telnet). `client/mumoria_client.c` is a small C
   client that puts the terminal in raw mode.
 * One thread per connection. Output is the diff of the session's virtual
@@ -761,6 +770,11 @@ of the following against the built server:
   `/bounty` counts orcs; the `/makeitem` form (base search, name, rarity,
   to-hit, powers) saves and drops a glowing Epic dagger; `/items` lists
   admin and script items; `/reload`; `/scripts`
+* the chat panel: a 120x30 client (NAWS) gets the rounded box beside the
+  map, full height, with chat and `/who` (one a line) in it; all six
+  borders; `/panel bottom` and `auto`; shrinking to 80 columns moves the
+  chat under the map, widening to 132x25 wraps its history into the box
+  again; a client that never sends its size keeps the pane under the map
 * the Demon Breach (`scripts/examples/40_demon_breach.lua`, sped up): the
   warning, the red portal in the town, two waves of named demons (the town
   keeps all of them), two Pit Fiends and their deaths told, Demon Lord

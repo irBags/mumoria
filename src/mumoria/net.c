@@ -24,6 +24,7 @@
 #define SE 240
 #define OPT_ECHO 1
 #define OPT_SGA 3
+#define OPT_NAWS 31
 
 int mu_net_listen(int port) {
     signal(SIGPIPE, SIG_IGN);
@@ -113,6 +114,7 @@ static void feed(MuConn *c, const unsigned char *buf, int n) {
                     break; // a literal 255; dropped below as not printable
                 }
                 c->tn_state = (ch == SB) ? 3 : (ch >= WILL && ch <= DONT) ? 2 : 0;
+                c->sb_len = 0;
                 continue;
             case 2:
                 c->tn_state = 0;
@@ -120,10 +122,21 @@ static void feed(MuConn *c, const unsigned char *buf, int n) {
             case 3:
                 if (ch == IAC) {
                     c->tn_state = 4;
+                } else if (c->sb_len < (int) sizeof(c->sb)) {
+                    c->sb[c->sb_len++] = ch;
                 }
                 continue;
             case 4:
+                if (ch == IAC && c->sb_len < (int) sizeof(c->sb)) {
+                    c->sb[c->sb_len++] = ch; // a doubled 255 inside it
+                    c->tn_state = 3;
+                    continue;
+                }
                 c->tn_state = (ch == SE) ? 0 : 3;
+                if (ch == SE && c->sb_len >= 5 && c->sb[0] == OPT_NAWS) {
+                    // the window's width and height, high byte first: the chat may move beside the map
+                    mu_vt_set_size(&c->screen, c->sb[1] << 8 | c->sb[2], c->sb[3] << 8 | c->sb[4]);
+                }
                 continue;
         }
 
@@ -284,7 +297,8 @@ void mu_net_serve(int listen_fd, void (*on_conn)(MuConn *conn)) {
         mu_vt_init(&c->screen, c->wake_pipe[1]);
         c->refs = 2;
 
-        static const char hello[] = {(char) IAC, (char) WILL, OPT_ECHO, (char) IAC, (char) WILL, OPT_SGA, (char) IAC, (char) DO, OPT_SGA};
+        static const char hello[] = {(char) IAC, (char) WILL, OPT_ECHO, (char) IAC, (char) WILL, OPT_SGA,
+                                     (char) IAC, (char) DO,   OPT_SGA,  (char) IAC, (char) DO,   OPT_NAWS};
         mu_vt_raw(&c->screen, hello, sizeof(hello));
 
         pthread_attr_t attr;
