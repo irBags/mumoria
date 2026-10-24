@@ -27,18 +27,34 @@ sound, drop in a `.wav` of the same name; to silence one, delete it.
 | `door_bash`  | a door is smashed open                                  |
 | `your_turn`  | battle turns: it is your turn (only you hear it)        |
 
-The ones here are synthesised by `make_sounds.py` (Python, no packages):
-`python3 make_sounds.py` writes them again.
+The ones in use come from free CC0 packs (Kenney, OpenGameArt; see
+`CREDITS.md`), except `fizzle`, which is synthesised. `candidates/<name>/`
+holds the other choices for each sound, the synthesised one
+(`0-synth.wav`) among them; `candidates/README.md` says where each came
+from. To change a sound, copy a candidate over `<name>.wav` and rebuild.
+
+* `python3 fetch_candidates.py` downloads the packs again and remakes the
+  candidates (it needs ffmpeg); `--use` also puts each first pick in use.
+* `python3 make_sounds.py` remakes the synthesised ones.
 
 ## Playing them
 
-The client runs a command for each sound:
+On Windows, `mumoria-client.exe` plays them itself (all read at the start,
+mixed into one stream, so they overlap). Any 16-bit PCM `.wav` will do.
+
+On Linux, WSL and macOS the client runs a command for each sound:
 
 * Linux and WSL: `paplay --volume=%p %f` (PulseAudio; WSLg has it)
 * macOS: `afplay -v %a %f`
 * anything else: set `MUMORIA_PLAYER`, e.g. `MUMORIA_PLAYER='aplay -q %f'`
 
-In it `%f` is the file, `%v` the volume 0-100, `%p` the volume for paplay
+PulseAudio (WSLg's too) puts the sound card to sleep after a few quiet
+seconds, and the next sound then waits while it wakes, heard late. So the
+client holds a silent stream open (`pacat`, gone when the client ends) to
+keep it awake; `MUMORIA_KEEPALIVE=off` leaves that out. It also reads every
+sound once at start, so a first play is not slowed by the disk.
+
+In the command `%f` is the file, `%v` the volume 0-100, `%p` the volume for paplay
 (0-65536) and `%a` for afplay (0.00-1.00). `MUMORIA_SOUNDS=/some/dir` plays
 another folder's sounds. `mumoria-client -q` (or `MUMORIA_SOUND=off`) tells
 the server not to send any.

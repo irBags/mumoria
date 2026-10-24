@@ -291,6 +291,12 @@ steps, and what stays compatible.
 * **DB:** `bank(account, gold)`, `bank_item(id, account, item blob, at)`, up
   to `MU_BANK_SLOTS` items. These belong to the account, so they outlive a
   dead character (as in the python port's East End).
+* **Stacks (the Bank and the guild vault alike):** storing or retrieving a
+  stack asks how many (Enter: all). What is stored joins an identical stack
+  already there (no new slot); the rest of a stack stays where it was. Each
+  change names the stack as it was read (`... AND blob = ?`), so two members
+  at one guild vault cannot both take the same things; the loser is told
+  "That has just changed". `screens.cpp` `vault_store`, `vault_retrieve`.
 
 ### 2.10 Global auction house
 
@@ -666,8 +672,13 @@ steps, and what stays compatible.
   unheard past 20 squares; your own doings never below 60. The blind still
   hear. Battle turns' "your turn" chime goes to that player alone (a bell
   when their client does not play sounds).
-* **The starter sounds** are synthesised by `client/sounds/make_sounds.py`
-  (no samples, no licences); any can be replaced by a `.wav` of its name.
+* **The sounds** come from CC0 packs (Kenney, OpenGameArt;
+  `client/sounds/CREDITS.md`), fetched, trimmed and evened out by
+  `client/sounds/fetch_candidates.py`; `fizzle` is synthesised
+  (`make_sounds.py`). `client/sounds/candidates/<name>/` holds 3-5 other
+  choices for each, the synthesised one among them; copy one over
+  `<name>.wav` to change it (the build copies them beside the client every
+  time). Only CC0 sounds go in, unless credited as their licence asks.
 
 ## 3. Menus: drawn the way Umoria draws
 
@@ -725,6 +736,24 @@ directory the server runs from (`addr2line -Cfie mumoria-server 0x...`
 turns its `+0x...` offsets into source lines). Umoria aborts when it draws
 off the screen; the server logs that there as a "bug" and carries on.
 
+`./build.sh` builds all of it and the Windows client: `linux`, `windows`,
+`all` (the default), `dist` (packages in `dist/`), `get-zig`. `BUILD_DIR`
+and `DIST_DIR` put them elsewhere.
+
+**The client** is `client/mumoria_client.c` (the telnet, the sounds' names,
+the log, the command line) with one platform file: `client_posix.c` (Linux,
+WSL, macOS: sounds by `paplay`/`afplay` and a silent `pacat` stream that keeps
+PulseAudio from sleeping) or `client_win.c` (Windows: a VT-mode console,
+Winsock, and its own `waveOut` mixer, which plays overlapping sounds at their
+volumes and keeps the device awake). The Windows one is cross-compiled with
+Zig (`zig cc -target x86_64-windows-gnu`), so no Windows compiler is needed.
+Both wait at most 10 s for a server to answer. A failure (no server, no
+answer, a lost connection, no sound player or device, a sound that will not
+load, a console without colours) is told on leaving and written to
+`mumoria-client.log` beside the program; the server closing the connection
+is not a failure. A crash puts the terminal back and logs where: a backtrace
+on Linux, the offset in the program on Windows (the build's `.pdb` maps it).
+
 Without root, ncurses can be built from source into `~/local`
 (`./configure --prefix=$HOME/local --enable-overwrite --without-cxx-binding`,
 then link `libncurses.a` to `libncursesw.a`); CMake looks in `~/local` by
@@ -745,7 +774,9 @@ of the following against the built server:
   creation
 * the shared town (each player sees the other's `@` move), say and world
   chat, parties, `/who`
-* the Bank: deposit, withdraw, store an item
+* the Bank: deposit, withdraw, store an item; part of a stack (2 of 5
+  rations, then 1 more that joins them, then 2 back, then the last one with
+  no question), and ESC at "how many?" moves nothing
 * the Guild Hall: found a guild, guild gold, then invite, join, guild chat
   and promote
 * the Auction House: list, buy out, bid, settle when the time is up, collect
@@ -827,6 +858,22 @@ of the following against the built server:
   monsters on an idle player (the server died); fixed, 224 drops and no
   crash. Umoria's breeding, summoning and new monsters now avoid players'
   squares, and a door does not close on one
+* `^X` (save and exit), 2026-10-24: Umoria's ends in `endGame()`, whose hook
+  recorded every call as a death, so `^X` killed the character (8 lost since
+  2026-10-22, "(saved)" in the graveyard; the `mumoria_tmp_<pid>.sav` files
+  left beside the server are those saves). Now `^X` leaves to the character
+  menu as any exit does (saved there), and `endGame()` ends a character only
+  when it is dead or a winner retires. Bot: `^X`, back at the menu with the
+  character listed, no death sound, loaded again; no graveyard row. Five of
+  the eight were brought back from those files (two renamed, as names are
+  unique); two had been saved with the level's turn at -1 (a second `^X` on
+  a level before a turn passed), which Umoria's loader refused: under
+  MUMORIA a negative turn now loads as 0 (the level keeps its own turn)
+* files on the server, 2026-10-24: the tomb's "Character record?" and the
+  `C` screen's `<f>ile` wrote a character sheet to any file name a player
+  typed, beside the server or anywhere it could write. Under MUMORIA they
+  write nothing (nor the wizard's object dump), and `C` no longer renames
+  (a rename changed only the save, not the unique name in the database)
 * sounds (2.24): six bots that answered `WILL 212` on 50 ft got hit, kill,
   hurt, roar, cast, miss, die and door_open, quieter with distance; the real
   client against a stand-in server answered `WILL`, ran its player for

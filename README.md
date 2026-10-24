@@ -70,6 +70,13 @@ with the source (`src/lua`). Without root, ncurses can be built into
 `~/local`, where CMake looks for it by itself (see `docs/MUMORIA_DESIGN.md`,
 section 4).
 
+Or `./build.sh`, which does that and also builds the client for Windows
+(`build/windows/mumoria-client.exe`, cross-compiled with Zig;
+`./build.sh get-zig` fetches Zig without root). `./build.sh dist` makes the
+packages to hand out: `dist/mumoria-linux-x86_64.tar.gz` and
+`dist/mumoria-client-windows-x86_64.zip`. The server runs on Linux (on
+Windows, in WSL).
+
 ## Running a server
 
     cd build/umoria
@@ -86,9 +93,11 @@ repository's `scripts/` folder there).
 
     telnet yourserver 4000
 
-or `mumoria-client yourserver 4000` (which sets up the terminal and plays
-the game's sounds; `-q` for none; Ctrl-] quits; see
-`client/sounds/README.md`). Type `new` at the account prompt to make an account, then a
+or `mumoria-client yourserver 4000` (Linux, WSL, macOS, or
+`mumoria-client.exe` on Windows), which sets up the terminal and plays the
+game's sounds (`-q` for none; Ctrl-] quits; see `client/sounds/README.md`).
+What goes wrong for it is told on leaving and kept in `mumoria-client.log`
+beside it. Type `new` at the account prompt to make an account, then a
 character. The keys are Umoria's (`?` lists them). The multiplayer ones:
 
 * `'` then text: talk; `'` then a `/` command, such as `/help`, `/who`,

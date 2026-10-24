@@ -334,8 +334,14 @@ if (NOT WIN32)
     set_target_properties(mumoria-server PROPERTIES ENABLE_EXPORTS ON)
     target_compile_options(mumoria-server PRIVATE -g)
 
-    add_executable(mumoria-client client/mumoria_client.c)
-    # its sounds go beside it (client/sounds/README.md)
-    file(GLOB client_sounds client/sounds/*.wav)
-    file(COPY ${client_sounds} DESTINATION "${build_dir}/sounds")
+    # the client (Windows: client_win.c, built by build.sh with zig)
+    add_executable(mumoria-client client/mumoria_client.c client/client_posix.c)
+    set_target_properties(mumoria-client PROPERTIES C_STANDARD 11)
+    target_compile_options(mumoria-client PRIVATE -g) # a crash's offsets to source lines (addr2line)
+    # its sounds go beside it, again at every build so a swapped .wav is
+    # picked up (client/sounds/README.md)
+    file(GLOB client_sounds ${CMAKE_CURRENT_SOURCE_DIR}/client/sounds/*.wav)
+    add_custom_target(mumoria-sounds ALL
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/${build_dir}/sounds"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${client_sounds} "${CMAKE_CURRENT_BINARY_DIR}/${build_dir}/sounds")
 endif ()

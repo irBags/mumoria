@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Mumoria's starter sounds, synthesised: no samples, no licences to track.
+"""Mumoria's synthesised sounds: no samples, no licences to track.
 
-    python3 make_sounds.py        # writes the .wav files beside this script
+    python3 make_sounds.py        # writes candidates/<name>/0-synth.wav
 
-Each is 22050 Hz, 16-bit mono. They are simple on purpose; replace any of
-them with a recorded .wav of the same name (see README.md).
+Each is 22050 Hz, 16-bit mono. They were the first sounds; now each is one
+candidate beside the downloaded ones (fetch_candidates.py), kept to fall
+back on (see README.md).
 """
 
 import math
@@ -83,13 +84,15 @@ def mix(*parts):
 
 def write(name, samples, peak=0.85):
     top = max(abs(x) for x in samples) or 1.0
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), name + ".wav")
+    folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "candidates", name)
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, "0-synth.wav")
     with wave.open(path, "wb") as w:
         w.setnchannels(1)
         w.setsampwidth(2)
         w.setframerate(RATE)
         w.writeframes(b"".join(struct.pack("<h", int(x / top * peak * 32767)) for x in samples))
-    print(f"{name}.wav  {len(samples) / RATE:.2f} s")
+    print(f"candidates/{name}/0-synth.wav  {len(samples) / RATE:.2f} s")
 
 
 def thump(freq, seconds):

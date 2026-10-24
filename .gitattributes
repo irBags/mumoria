@@ -1,0 +1,4 @@
+# Shell scripts run in WSL from a Windows checkout: always LF
+*.sh text eol=lf
+# Sounds are binary
+*.wav binary
