@@ -41,6 +41,7 @@ struct MuSession {
     MuParty *party = nullptr;
     bool guild_turns = false; // the guild runs turn-based battles
     bool acted = false;       // took this battle round's action
+    bool turn_shown = false;  // "YOUR TURN!" is on their screen
     int64_t invited_by = 0;  // account that invited us to a party
     int64_t trade_asked = 0; // account we asked to trade
     int pending_depth = -1;  // /goto, /summon: the level to go to

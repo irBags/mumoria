@@ -244,7 +244,10 @@ steps, and what stays compatible.
   take one action each per round. A member counts as in the battle when an
   awake monster is within `MU_BATTLE_RANGE` (10) squares. Those farther away
   are left out of the rounds until they come near. A member who has acted
-  sees "Waiting for X to take their turn...". Anyone who has not acted
+  sees "Waiting for X to take their turn...". A member who has not acted
+  yet sees **YOUR TURN!** in bold red under their stats, with a bell as the
+  turn comes; it goes once they act (`session.cpp` `turn_label`, reached
+  also when a member's action pokes the others). Anyone who has not acted
   within `MU_ROUND_TIMEOUT` (20 s) is skipped. With turns off, nobody ever
   waits. Code: `social.cpp` `mu_round_*`, and the wait is in
   `session.cpp` `muGetKey`.
@@ -754,7 +757,8 @@ of the following against the built server:
   * `"` and a direction hits (the target 21 -> 13 HP, told who struck them)
   * `/pvp` changes, then is refused for 24 hours
 * battle turns: off, a player acts freely; on, a member's second action waits
-  until the other member has acted, then runs
+  until the other member has acted, then runs; "YOUR TURN!" shows for the
+  one who has not acted (both, at a new round) and goes once they act
 * animations (2.18), seen by the caster and by a player beside them, frame
   for frame: casting rings, Magic Missile flying and bursting and killing,
   Stinking Cloud's rings, a bolt splashing on a wall, a thrown book's hit,

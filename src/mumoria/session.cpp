@@ -470,6 +470,25 @@ static void refresh_view(MuSession *s) {
     putQIO();
 }
 
+// Battle turns: "YOUR TURN!" in bold red under the stats, beside the map,
+// while it is this player's turn in a round, with a bell as the turn comes.
+// It goes once they have acted (lock held, at the main prompt).
+static void turn_label(MuSession *s) {
+    bool mine = mu_round_my_turn(s);
+    if (!mine && !s->turn_shown) {
+        return;
+    }
+    if (mine && !s->turn_shown) {
+        muBell();
+    }
+    s->turn_shown = mine;
+    mu_vt_set_attr(mu_vt_current, mine ? MU_ATTR_FG(196) | MU_ATTR_BOLD : 0);
+    putString(mine ? "YOUR TURN!" : "          ", Coord_t{21, 1});
+    mu_vt_set_attr(mu_vt_current, 0);
+    panelMoveCursor(py.pos);
+    putQIO();
+}
+
 // Experience and boss kills others credited to this player, applied when it
 // can be shown (lock held, at the main prompt).
 static void apply_pending(MuSession *s) {
@@ -501,6 +520,7 @@ int muGetKey() {
         if (s->view_stale) {
             refresh_view(s);
         }
+        turn_label(s); // gone once they have acted
         // a turn-based battle: wait for the others in it to take their turns
         time_t since = time(nullptr);
         bool said = false;
@@ -526,6 +546,7 @@ int muGetKey() {
             messageLineClear();
             putQIO();
         }
+        turn_label(s); // a new round, or the others have gone
     }
     mu_world_unlock(s, !safe);
 
@@ -552,6 +573,9 @@ int muGetKey() {
                 mu_world_lock(s);
                 refresh_view(s);
                 apply_pending(s);
+                if (s->at_top) {
+                    turn_label(s); // a battle began, or the round moved on
+                }
                 mu_world_unlock(s, false);
             }
             continue;

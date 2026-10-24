@@ -45,6 +45,8 @@ MuSession *mu_round_waits_for(MuSession *s);
 void mu_round_acted(MuSession *s);
 // Waited too long for p: their action this round is skipped.
 void mu_round_skip(MuSession *p);
+// s (loaded) is in a battle round with another member and has not acted yet.
+bool mu_round_my_turn(MuSession *s);
 
 int mu_guild_perms(int64_t guild, int rank);
 std::string mu_guild_name(int64_t guild);

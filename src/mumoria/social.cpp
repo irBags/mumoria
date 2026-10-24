@@ -511,6 +511,18 @@ void mu_round_acted(MuSession *s) {
     }
 }
 
+bool mu_round_my_turn(MuSession *s) {
+    if (s->acted || s->in_building || !in_battle(s)) {
+        return false;
+    }
+    for (MuSession *p : round_group(s)) {
+        if (p != s && !p->in_building && in_battle(p)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void mu_round_skip(MuSession *p) {
     p->acted = true;
     say(p, "Your turn in the battle was skipped.");
