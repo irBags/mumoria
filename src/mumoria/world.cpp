@@ -889,7 +889,10 @@ void muTownPeople() {
     if (loaded_level == nullptr) {
         return;
     }
-    int people = next_free_monster_id - config::monsters::MON_MIN_INDEX_ID;
+    int people = 0; // townspeople: a script's monsters neither count nor leave
+    for (int i = config::monsters::MON_MIN_INDEX_ID; i < next_free_monster_id; i++) {
+        people += monsters[i].mu_script == 0;
+    }
     bool night = (dg.game_turn / 5000) & 1; // dungeon_generate.cpp isNighTime()
     int want = night ? config::monsters::MON_MIN_TOWNSFOLK_NIGHT : config::monsters::MON_MIN_TOWNSFOLK_DAY;
     if (people <= want && randomNumber(config::monsters::MON_CHANCE_OF_NEW) != 1) {
@@ -897,7 +900,7 @@ void muTownPeople() {
     }
     if (people > want) { // too many: one leaves each turn
         for (int i = next_free_monster_id - 1; i >= config::monsters::MON_MIN_INDEX_ID; i--) {
-            if (!seen_by_a_player(monsters[i].pos)) {
+            if (monsters[i].mu_script == 0 && !seen_by_a_player(monsters[i].pos)) {
                 dungeonDeleteMonster(i);
                 return;
             }

@@ -6,6 +6,7 @@
 #include "auth.h"
 #include "mu_config.h"
 #include "raid.h"
+#include "script.h"
 #include "social.h"
 
 #include <sched.h>
@@ -640,6 +641,7 @@ void muEndGame() {
 void muTurnDone() {
     mu_self->did_act = true;
     mu_round_acted(mu_self);
+    mu_script_tick(mu_self); // script.cpp: mu.every timers, at most once a second a level
 }
 
 void muNewLevel() {

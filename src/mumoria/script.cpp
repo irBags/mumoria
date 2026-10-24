@@ -36,11 +36,66 @@ std::string current_file;
 size_t memory = 0;
 const size_t MEMORY_MAX = 64u << 20;
 int steps = 0;
+int depth = 0;              // calls into Lua under way (an event can come from inside mu.hurt)
 const int STEP_HOOK = 1000; // instructions between counts
 const int STEP_MAX = 5000;  // counts in one call: 5 million instructions
 
-std::vector<std::string> boss_keys;     // Monster_t::mu_script - 1
+// Numbers a monster carries (Monster_t::mu_script, mu_name), kept for good
+// in script_state ("<kind>:<n>" = the key or name), so a monster saved on a
+// level means the same after a restart or a /reload.
+struct Registry {
+    const char *kind;
+    std::vector<std::string> keys; // [n - 1]
+
+    void load() {
+        keys.clear();
+        std::string like = std::string(kind) + ":%";
+        MuRows *r = mu_db_query("SELECT key, value FROM script_state WHERE key LIKE ?", "s", like.c_str());
+        while (r != nullptr && mu_db_next(r)) {
+            int n = atoi(mu_db_col_text(r, 0) + strlen(kind) + 1);
+            if (n >= 1 && n <= 255) {
+                if ((int) keys.size() < n) {
+                    keys.resize((size_t) n);
+                }
+                keys[(size_t) n - 1] = mu_db_col_text(r, 1);
+            }
+        }
+        mu_db_done(r);
+    }
+
+    int find(std::string const &key) const {
+        for (size_t i = 0; i < keys.size(); i++) {
+            if (keys[i] == key) {
+                return (int) i + 1;
+            }
+        }
+        return 0;
+    }
+
+    // its number, given now if it has none (0 when all 255 are taken)
+    int get(std::string const &key) {
+        int n = find(key);
+        if (n != 0 || keys.size() >= 255) {
+            return n;
+        }
+        keys.push_back(key);
+        n = (int) keys.size();
+        std::string row = std::string(kind) + ":" + std::to_string(n);
+        mu_db_run("INSERT INTO script_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", "ss", row.c_str(),
+                  key.c_str());
+        return n;
+    }
+
+    std::string const *at(int n) const {
+        return n >= 1 && n <= (int) keys.size() && !keys[(size_t) n - 1].empty() ? &keys[(size_t) n - 1] : nullptr;
+    }
+};
+
+Registry tags{"tag", {}};               // Monster_t::mu_script: a boss's key or a tag
+Registry names{"monster_name", {}};     // Monster_t::mu_name
+std::vector<std::string> boss_tags;     // the tags mu.boss and boss= made bosses of (they drop a boss's loot)
 std::map<std::string, int> boss_max_hp; // "depth:key" -> hit points when made
+std::map<MuLevel *, time_t> ticked;     // when each level's timers last ran
 
 void *alloc(void *, void *ptr, size_t osize, size_t nsize) {
     if (ptr == nullptr) {
@@ -91,8 +146,11 @@ bool call(int nargs, int nresults) {
     int base = lua_gettop(L) - nargs;
     lua_pushcfunction(L, traceback);
     lua_insert(L, base);
-    steps = 0;
+    if (depth++ == 0) {
+        steps = 0; // the budget is for the whole call, events inside it included
+    }
     int rc = lua_pcall(L, nargs, nresults, base);
+    depth--;
     lua_remove(L, base);
     if (rc != LUA_OK) {
         report(lua_tostring(L, -1) != nullptr ? lua_tostring(L, -1) : "error");
@@ -170,7 +228,7 @@ void push_monster(lua_State *l, int id) {
     lua_newtable(l);
     set_int(l, "id", id);
     set_int(l, "_c", m.creature_id);
-    set_str(l, "name", c.name);
+    set_str(l, "name", muMonsterName(m));
     set_str(l, "letter", std::string(1, (char) c.sprite));
     set_int(l, "level", c.level);
     set_int(l, "x", m.pos.x);
@@ -182,11 +240,12 @@ void push_monster(lua_State *l, int id) {
     if (m.mu_boss >= 1 && m.mu_boss <= 3) {
         set_str(l, "kind", KIND[m.mu_boss]);
     }
+    set_str(l, "creature", c.name);
     int max_hp = m.hp;
-    if (m.mu_script > 0 && m.mu_script <= boss_keys.size()) {
-        std::string const &key = boss_keys[m.mu_script - 1];
-        set_str(l, "boss", key);
-        int &known = boss_max_hp[std::to_string(dg.current_level) + ":" + key];
+    if (std::string const *key = tags.at(m.mu_script)) {
+        bool boss = std::find(boss_tags.begin(), boss_tags.end(), *key) != boss_tags.end();
+        set_str(l, boss ? "boss" : "tag", *key);
+        int &known = boss_max_hp[std::to_string(dg.current_level) + ":" + *key];
         known = std::max(known, (int) m.hp);
         max_hp = known;
     }
@@ -430,16 +489,10 @@ bool spawn_spot(Coord_t const &near, bool far, Coord_t &out) {
 }
 
 int boss_index(std::string const &key) {
-    for (size_t i = 0; i < boss_keys.size(); i++) {
-        if (boss_keys[i] == key) {
-            return (int) i + 1;
-        }
+    if (std::find(boss_tags.begin(), boss_tags.end(), key) == boss_tags.end()) {
+        boss_tags.push_back(key);
     }
-    if (boss_keys.size() >= 255) {
-        return 0;
-    }
-    boss_keys.push_back(key);
-    return (int) boss_keys.size();
+    return tags.get(key);
 }
 
 // mu.spawn{creature=, near= | far=true, count=, hp=, speed=, awake=, boss=}
@@ -463,8 +516,11 @@ int l_spawn(lua_State *l) {
     double hp = num_field(l, 1, "hp", 1.0);
     int speed = int_field(l, 1, "speed", 0);
     bool awake = bool_field(l, 1, "awake", !far);
-    std::string boss = str_field(l, 1, "boss", "");
-    int tag = boss.empty() ? 0 : boss_index(boss);
+    std::string boss = str_field(l, 1, "boss", ""), tag_name = str_field(l, 1, "tag", "");
+    std::string shown = str_field(l, 1, "name", "");
+    int tag = !boss.empty() ? boss_index(boss) : !tag_name.empty() ? tags.get(tag_name) : 0;
+    int name_no = shown.empty() ? 0 : names.get(shown);
+    std::string key = !boss.empty() ? boss : tag_name;
 
     lua_newtable(l);
     int made = 0;
@@ -479,8 +535,9 @@ int l_spawn(lua_State *l) {
         m.speed = (int16_t) (m.speed + speed);
         m.mu_script = (uint8_t) tag;
         m.mu_phase = 0;
+        m.mu_name = (uint8_t) name_no;
         if (tag != 0) {
-            boss_max_hp[std::to_string(dg.current_level) + ":" + boss] = m.hp;
+            boss_max_hp[std::to_string(dg.current_level) + ":" + key] = m.hp;
         }
         monsterUpdateVisibility(id);
         push_monster(l, id);
@@ -513,12 +570,177 @@ int l_find_boss(lua_State *l) {
     std::string key = luaL_checkstring(l, 1);
     for (int i = config::monsters::MON_MIN_INDEX_ID; i < next_free_monster_id; i++) {
         Monster_t const &m = monsters[i];
-        if (m.hp >= 0 && m.mu_script > 0 && m.mu_script <= boss_keys.size() && boss_keys[m.mu_script - 1] == key) {
+        if (m.hp >= 0 && tags.at(m.mu_script) != nullptr && *tags.at(m.mu_script) == key) {
             push_monster(l, i);
             return 1;
         }
     }
     lua_pushnil(l);
+    return 1;
+}
+
+// mu.tagged(tag): every live monster here with that tag (or boss key)
+int l_tagged(lua_State *l) {
+    need_world(l);
+    int n = tags.find(luaL_checkstring(l, 1)), count = 0;
+    lua_newtable(l);
+    for (int i = config::monsters::MON_MIN_INDEX_ID; n != 0 && i < next_free_monster_id; i++) {
+        if (monsters[i].hp >= 0 && monsters[i].mu_script == n) {
+            push_monster(l, i);
+            lua_rawseti(l, -2, ++count);
+        }
+    }
+    return 1;
+}
+
+int l_despawn(lua_State *l) {
+    need_world(l);
+    int id = monster_arg(l, 1);
+    if (id >= 0) {
+        Coord_t at{monsters[id].pos.y, monsters[id].pos.x};
+        dungeonDeleteMonster(id);
+        dungeonLiteSpot(at);
+        mu_level_loaded()->dirty = true;
+    }
+    lua_pushboolean(l, id >= 0);
+    return 1;
+}
+
+// --- portals: a store door (sub-category 112) with its key in the inscription
+
+const uint8_t PORTAL = 112;
+
+bool find_portal(std::string const &key, Coord_t &out) {
+    for (int y = 0; y < dg.height; y++) {
+        for (int x = 0; x < dg.width; x++) {
+            int id = dg.floor[y][x].treasure_id;
+            if (id != 0 && game.treasure.list[id].category_id == TV_STORE_DOOR && game.treasure.list[id].sub_category_id == PORTAL &&
+                key == game.treasure.list[id].inscription) {
+                out = Coord_t{y, x};
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Open floor with nothing on it, nobody within three squares, no door near.
+bool portal_spot(Coord_t &out) {
+    for (int tries = 0; tries < 4000; tries++) {
+        Coord_t c{(int32_t) randomNumber(dg.height - 2), (int32_t) randomNumber(dg.width - 2)};
+        Tile_t const &t = dg.floor[c.y][c.x];
+        if (t.feature_id > MAX_CAVE_FLOOR || t.treasure_id != 0 || t.creature_id != 0 || coordDistanceBetween(c, py.pos) < 4) {
+            continue;
+        }
+        bool clear = true;
+        for (int y = c.y - 3; clear && y <= c.y + 3; y++) {
+            for (int x = c.x - 3; clear && x <= c.x + 3; x++) {
+                if (y <= 0 || x <= 0 || y >= dg.height - 1 || x >= dg.width - 1) {
+                    clear = false;
+                } else if (dg.floor[y][x].treasure_id != 0 && game.treasure.list[dg.floor[y][x].treasure_id].category_id == TV_STORE_DOOR) {
+                    clear = false;
+                } else if (muOtherPlayerAt(Coord_t{y, x})) {
+                    clear = false;
+                }
+            }
+        }
+        if (clear) {
+            out = c;
+            return true;
+        }
+    }
+    return false;
+}
+
+void push_place(lua_State *l, Coord_t const &c) {
+    lua_newtable(l);
+    set_int(l, "x", c.x);
+    set_int(l, "y", c.y);
+}
+
+// mu.portal{key=, at=, glyph=, colour=}: its place (nil if no room)
+int l_portal(lua_State *l) {
+    need_world(l);
+    luaL_checktype(l, 1, LUA_TTABLE);
+    std::string key = str_field(l, 1, "key", "");
+    if (key.empty() || key.size() > INSCRIP_SIZE - 2) {
+        return luaL_error(l, "mu.portal needs a key of 1 to %d letters", INSCRIP_SIZE - 2);
+    }
+    std::string glyph = str_field(l, 1, "glyph", "0");
+    int colour = int_field(l, 1, "colour", 199);
+    Coord_t at;
+    if (find_portal(key, at)) {
+        push_place(l, at); // already open
+        return 1;
+    }
+    lua_getfield(l, 1, "at");
+    bool given = !lua_isnil(l, -1);
+    if (given) {
+        at = coord_arg(l, lua_gettop(l));
+    }
+    lua_pop(l, 1);
+    if ((given && dg.floor[at.y][at.x].treasure_id != 0) || (!given && !portal_spot(at))) {
+        lua_pushnil(l);
+        return 1;
+    }
+    int id = popt();
+    Inventory_t &door = game.treasure.list[id];
+    inventoryItemCopyTo(config::dungeon::objects::OBJ_STORE_DOOR, door);
+    door.sub_category_id = PORTAL;
+    door.sprite = (uint8_t) (glyph.empty() ? '0' : glyph[0]);
+    door.to_ac = (int16_t) colour;
+    snprintf(door.inscription, sizeof(door.inscription), "%s", key.c_str());
+    dg.floor[at.y][at.x].treasure_id = (uint8_t) id;
+    dg.floor[at.y][at.x].field_mark = true;
+    dungeonLiteSpot(at);
+    mu_level_loaded()->dirty = true;
+    push_place(l, at);
+    return 1;
+}
+
+int l_find_portal(lua_State *l) {
+    need_world(l);
+    Coord_t at;
+    if (find_portal(luaL_checkstring(l, 1), at)) {
+        push_place(l, at);
+    } else {
+        lua_pushnil(l);
+    }
+    return 1;
+}
+
+int l_close_portal(lua_State *l) {
+    need_world(l);
+    Coord_t at;
+    bool found = find_portal(luaL_checkstring(l, 1), at);
+    if (found) {
+        (void) dungeonDeleteObject(at);
+        dungeonLiteSpot(at);
+        mu_level_loaded()->dirty = true;
+    }
+    lua_pushboolean(l, found ? 1 : 0);
+    return 1;
+}
+
+// mu.hurt(monster, damage): as if the player in the event struck it (the
+// kill is theirs, its events fire). True if it died.
+int l_hurt(lua_State *l) {
+    need_world(l);
+    int id = monster_arg(l, 1);
+    int damage = (int) luaL_checkinteger(l, 2);
+    if (id < 0 || damage <= 0) {
+        lua_pushboolean(l, 0);
+        return 1;
+    }
+    Coord_t at{monsters[id].pos.y, monsters[id].pos.x};
+    std::string name = muMonsterName(monsters[id]);
+    bool died = monsterTakeHit(id, damage) >= 0;
+    if (died) {
+        printMessage(("The " + name + " dies.").c_str());
+        dungeonLiteSpot(at);
+    }
+    mu_level_loaded()->dirty = true;
+    lua_pushboolean(l, died ? 1 : 0);
     return 1;
 }
 
@@ -564,14 +786,21 @@ int l_give(lua_State *l) {
     MuSession *p = player_arg(l, 1);
     std::string key = luaL_checkstring(l, 2);
     MuCustomItem const *d = mu_item_by_key(key);
-    if (d == nullptr) {
-        return luaL_error(l, "mu.give: no item '%s'", key.c_str());
+    Inventory_t item{};
+    if (d != nullptr) {
+        mu_items_make(*d, item);
+    } else {
+        int tier = mu_rarity_by_name(lower(key));
+        if (tier < 0) {
+            return luaL_error(l, "mu.give: no item or rarity '%s'", key.c_str());
+        }
+        if (!mu_loot_make_tier(tier, item)) {
+            lua_pushboolean(l, 0);
+            return 1;
+        }
     }
-    MuCustomItem def = *d;
     bool given = false;
     mu_with_player(mu_self, p, [&] {
-        Inventory_t item{};
-        mu_items_make(def, item);
         if (inventoryCanCarryItemCount(item)) {
             inventoryCarryItem(item);
             given = true;
@@ -693,7 +922,8 @@ int l_boss_key(lua_State *l) {
 
 const luaL_Reg MU[] = {
     {"item", l_item},         {"tell", l_tell},     {"say_level", l_say_level}, {"say_world", l_say_world}, {"spawn", l_spawn},
-    {"monsters", l_monsters}, {"find_boss", l_find_boss}, {"set_phase", l_set_phase}, {"heal", l_heal},   {"drop", l_drop},
+    {"monsters", l_monsters}, {"find_boss", l_find_boss}, {"tagged", l_tagged}, {"despawn", l_despawn},
+    {"portal", l_portal},     {"find_portal", l_find_portal}, {"close_portal", l_close_portal}, {"set_phase", l_set_phase}, {"hurt", l_hurt}, {"heal", l_heal},   {"drop", l_drop},
     {"give", l_give},         {"teleport", l_teleport}, {"player", l_player}, {"players", l_players},     {"glow", l_glow},           {"random", l_random},
     {"now", l_now},           {"depth", l_depth},   {"log", l_log},             {"set", l_set},             {"get", l_get},
     {"_error", l_error},      {"_boss_key", l_boss_key}, {nullptr, nullptr},
@@ -701,11 +931,12 @@ const luaL_Reg MU[] = {
 
 // mu.on, mu.command and mu.boss, in Lua.
 const char *PRELUDE = R"LUA(
-local handlers = {enter = {}, kill = {}, hurt = {}}
+local handlers = {enter = {}, kill = {}, hurt = {}, portal = {}}
 local commands = {}
+local timers = {}
 
 function mu.on(event, fn)
-  assert(handlers[event], "mu.on: no event '" .. tostring(event) .. "' (enter, kill, hurt)")
+  assert(handlers[event], "mu.on: no event '" .. tostring(event) .. "' (enter, kill, hurt, portal)")
   assert(type(fn) == "function", "mu.on needs a function")
   table.insert(handlers[event], fn)
 end
@@ -714,6 +945,23 @@ function mu._fire(event, ...)
   for _, fn in ipairs(handlers[event]) do
     local ok, err = pcall(fn, ...)
     if not ok then mu._error(tostring(err)) end
+  end
+end
+
+-- fn(player, level) every `seconds` (on some player's turn), on `depth` only if given
+function mu.every(seconds, fn, depth)
+  assert(type(seconds) == "number" and type(fn) == "function", "mu.every(seconds, fn, depth)")
+  table.insert(timers, {every = seconds, fn = fn, depth = depth, due = 0})
+end
+
+function mu._tick(p, level)
+  local now = mu.now()
+  for _, t in ipairs(timers) do
+    if (t.depth == nil or t.depth == level.depth) and now >= t.due then
+      t.due = now + t.every
+      local ok, err = pcall(t.fn, p, level)
+      if not ok then mu._error(tostring(err)) end
+    end
   end
 end
 
@@ -883,6 +1131,8 @@ bool begin_fire(const char *event) {
 
 void mu_script_init(std::string const &dir) {
     script_dir = dir.empty() ? "scripts" : dir;
+    tags.load();
+    names.load();
     errors.clear();
     mu_items_scripts_unloaded();
     open_state();
@@ -906,16 +1156,55 @@ std::string mu_script_reload() {
     return out + ".";
 }
 
+void push_level(MuLevel *level) {
+    lua_newtable(L);
+    set_int(L, "depth", level->depth);
+    set_int(L, "players", (lua_Integer) level->players.size());
+    if (mu_raid_title(level) != nullptr) {
+        set_str(L, "raid", mu_raid_title(level));
+    }
+}
+
 void mu_script_enter(MuSession *s, MuLevel *level) {
     if (!begin_fire("enter")) {
         return;
     }
     push_player(L, s);
-    lua_newtable(L);
-    set_int(L, "depth", level->depth);
-    if (mu_raid_title(level) != nullptr) {
-        set_str(L, "raid", mu_raid_title(level));
+    push_level(level);
+    fire(2);
+}
+
+void mu_script_tick(MuSession *s) {
+    if (L == nullptr || s->level == nullptr || mu_level_loaded() != s->level) {
+        return;
     }
+    time_t now = time(nullptr);
+    time_t &last = ticked[s->level];
+    if (now == last || !get_mu("_tick")) {
+        return;
+    }
+    last = now;
+    push_player(L, s);
+    push_level(s->level);
+    (void) call(2, 0);
+}
+
+bool mu_script_is_boss(int tag) {
+    std::string const *key = tags.at(tag);
+    return key != nullptr && std::find(boss_tags.begin(), boss_tags.end(), *key) != boss_tags.end();
+}
+
+const char *muMonsterName(Monster_t const &monster) {
+    std::string const *name = names.at(monster.mu_name);
+    return name != nullptr ? name->c_str() : creatures_list[monster.creature_id].name;
+}
+
+void muScriptPortal(const char *key) {
+    if (mu_self == nullptr || !begin_fire("portal")) {
+        return;
+    }
+    push_player(L, mu_self);
+    lua_pushstring(L, key);
     fire(2);
 }
 

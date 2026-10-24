@@ -497,7 +497,8 @@ static bool lookSee(Coord_t coord, bool &transparent) {
 
     if (los_rocks_and_objects == 0 && tile.creature_id > 1 && monsters[tile.creature_id].lit) {
         j = monsters[tile.creature_id].creature_id;
-        (void) snprintf(msg, MORIA_OBJ_DESC_SIZE, "%s %s %s. [(r)ecall]", description, isVowel(creatures_list[j].name[0]) ? "an" : "a", creatures_list[j].name);
+        const char *seen_name = MU_NAME(monsters[tile.creature_id], creatures_list[j]);
+        (void) snprintf(msg, MORIA_OBJ_DESC_SIZE, "%s %s %s. [(r)ecall]", description, isVowel(seen_name[0]) ? "an" : "a", seen_name);
         description = "It is on";
         putStringClearToEOL(msg, Coord_t{0, 0});
 

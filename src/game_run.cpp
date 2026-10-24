@@ -2260,7 +2260,7 @@ static void dungeonJamDoor() {
         game.player_free_turn = false;
 
         vtype_t msg = {'\0'};
-        (void) snprintf(msg, MORIA_MESSAGE_SIZE, "The %s is in your way!", creatures_list[monsters[tile.creature_id].creature_id].name);
+        (void) snprintf(msg, MORIA_MESSAGE_SIZE, "The %s is in your way!", MU_NAME(monsters[tile.creature_id], creatures_list[monsters[tile.creature_id].creature_id]));
         printMessage(msg);
     }
 }

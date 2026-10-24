@@ -245,6 +245,7 @@ enum class TrapTypes {
     AuctionHouse,
     RaidGate,     // 110: a raid gate in the dungeon, and a raid's way out
     RaidExit,
+    ScriptPortal, // 112: a script's portal (mumoria/script.cpp)
 #endif
 };
 
@@ -344,6 +345,9 @@ static void playerStepsOnTrap(Coord_t coord) {
         case TrapTypes::RaidGate:
         case TrapTypes::RaidExit:
             muRaidGate((int) item.sub_category_id);
+            break;
+        case TrapTypes::ScriptPortal:
+            muScriptPortal(item.inscription);
             break;
 #endif
 

@@ -952,7 +952,7 @@ void objectBlockedByMonster(int monster_id) {
     vtype_t msg = {'\0'};
 
     Monster_t const &monster = monsters[monster_id];
-    const char *name = creatures_list[monster.creature_id].name;
+    const char *name = MU_NAME(monster, creatures_list[monster.creature_id]);
 
     if (monster.lit) {
         (void) snprintf(description, MORIA_MESSAGE_SIZE, "The %s", name);

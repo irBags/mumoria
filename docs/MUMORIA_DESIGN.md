@@ -605,10 +605,19 @@ steps, and what stays compatible.
   order, at start and on an admin's `/reload`; `/scripts` lists them and
   the last errors. The guide and API are `scripts/README.md`; examples in
   `scripts/examples/` (not loaded from there).
-* **The API (`mu`):** `mu.item`, `mu.boss`, `mu.on("enter"|"kill"|"hurt")`,
-  `mu.command`, and calls to tell, spawn, drop, give, teleport, heal and
+* **The API (`mu`):** `mu.item`, `mu.boss`, `mu.on("enter"|"kill"|"hurt"|
+  "portal")`, `mu.every` (timers, run from `muTurnDone` at most once a
+  second a level), `mu.command`, and calls to tell, spawn (named, tagged),
+  hurt, heal, despawn, drop, give, teleport, open and close portals and
   keep state (`mu.set`/`mu.get`, table `script_state`). `mu.on`,
-  `mu.command` and `mu.boss` are a Lua prelude in `script.cpp`.
+  `mu.every`, `mu.command` and `mu.boss` are a Lua prelude in `script.cpp`.
+* **Names and portals:** `Monster_t::mu_name` (the last padding byte)
+  numbers a name a script gave a monster; `MU_NAME()` (headers.h) is used
+  wherever the engine names a monster, so "The Imp claws you". Tags, names
+  and boss keys are numbered for good in `script_state`. A portal is a
+  store door, sub-category 112, its key in the inscription, its colour in
+  `to_ac`; stepping on it fires `portal`. The town's population limit
+  (`muTownPeople`) counts and removes only monsters no script tagged.
 * **Fenced in:** one state, used only under the world lock. No io, os,
   package, debug, load, dofile or string.dump; 64 MB at most; one call
   stopped after about 5 million instructions (a count hook). An error goes
@@ -752,6 +761,14 @@ of the following against the built server:
   `/bounty` counts orcs; the `/makeitem` form (base search, name, rarity,
   to-hit, powers) saves and drops a glowing Epic dagger; `/items` lists
   admin and script items; `/reload`; `/scripts`
+* the Demon Breach (`scripts/examples/40_demon_breach.lua`, sped up): the
+  warning, the red portal in the town, two waves of named demons (the town
+  keeps all of them), two Pit Fiends and their deaths told, Demon Lord
+  Azgaroth's arrival and his phases at 75, 50 (healed, a Pit Fiend called)
+  and 25 percent, his death: a Legendary reward in the pack, the portal and
+  its demons gone, the 4-hour cool-down; "killed by a Hellspawn" in the
+  death message. Not tested: starting by itself, failing (time out, the
+  town left), stepping on the portal, the newcomers' warning
 
 ## 6. Not done yet
 

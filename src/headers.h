@@ -75,6 +75,9 @@
 #ifdef MUMORIA
 #include "mumoria/hooks.h"
 #define MU_ONLY(...) __VA_ARGS__
+// A monster's name: a script may give one its own (mumoria/script.cpp).
+#define MU_NAME(monster, creature) muMonsterName(monster)
 #else
 #define MU_ONLY(...)
+#define MU_NAME(monster, creature) ((creature).name)
 #endif

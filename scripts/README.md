@@ -11,6 +11,8 @@ order. An admin's `/reload` loads them all again without a restart, and
 * `10_items.lua`: custom items, from a Legendary sword to a Rare ring.
 * `20_orc_chieftain.lua`: a boss fight with guards, phases, healing and loot.
 * `30_bounties.lua`: kill counting, rewards, a `/bounty` command.
+* `40_demon_breach.lua`: a raid in the town: a portal, waves of named
+  demons, two Pit Fiends, a Demon Lord with phases, rewards, a cool-down.
 
 ## What a script may do
 
@@ -57,15 +59,24 @@ is kept. Admins can make items in the game too: `/makeitem`.
 ```lua
 mu.on("enter", function(player, level) end) -- a player arrives on a level; level = {depth=, raid=}
 mu.on("kill", function(player, monster) end) -- the player killed it (before its loot is shared)
-mu.on("hurt", function(player, monster) end) -- a script's boss (spawned with boss=) was hurt and lives
+mu.on("hurt", function(player, monster) end) -- a script's monster (spawned with boss= or tag=) was hurt and lives
+mu.on("portal", function(player, key) end) -- a player stepped on a script's portal
+mu.every(seconds, function(player, level) end, depth) -- a timer; depth (optional) limits it to one level
 mu.command("name", function(player, args) end, "help") -- a /name chat command (if the game has none)
 ```
 
+Timers run at the end of some player's turn, at most once a second a level,
+so on a level where nobody is acting time stands still (as it does for its
+monsters). `mu.every(1, fn, 0)` is a clock for the town.
+
 A **player** is `{name, level, class, race, x, y, depth, hp, max_hp, gold,
-admin, in_party}`. A **monster** is `{id, name, letter, level, x, y, hp,
-max_hp, awake, phase, kind, boss}`: `kind` is `boss`, `captain` or `lord`
-for the game's own bosses, `boss` is a script boss's key, `phase` its count
-(0 until set). Both are copies: read them, then act through `mu`.
+admin, in_party}`. A **monster** is `{id, name, creature, letter, level, x,
+y, hp, max_hp, awake, phase, kind, boss, tag}`: `name` is the name it goes
+by (its own, if a script gave it one), `creature` what it really is, `kind`
+is `boss`, `captain` or `lord` for the game's own bosses, `boss` a script
+boss's key, `tag` a script's tag, `phase` the script's count (0 until set).
+A **level** is `{depth, players, raid}`. All are copies: read them, then act
+through `mu`.
 
 ## Doing things
 
@@ -75,18 +86,26 @@ These work inside an event or command (on the level of the player in it):
 |---|---|
 | `mu.tell(player, text)` | a line in that player's chat |
 | `mu.say_level(text)` / `mu.say_world(text)` | to the level, or to everyone |
-| `mu.spawn{creature=, near= / far=true, count=, hp=, speed=, awake=, boss=}` | monsters: a name ("Black Orc") or a letter ("o"); `hp` multiplies, `speed` adds; returns the monster, or a list when `count` is given |
-| `mu.monsters()` | every monster on the level |
-| `mu.find_boss(key)` | that script boss, if alive here |
-| `mu.set_phase(monster, n)` / `mu.heal(monster, n)` | a boss's phase; hit points (negative hurts) |
+| `mu.spawn{creature=, name=, near= / far=true, count=, hp=, speed=, awake=, boss= / tag=}` | monsters: a creature's name ("Black Orc") or a letter ("o"); `name` is what the game calls them ("Imp"); `hp` multiplies, `speed` adds; `boss=` makes them a boss (a boss's loot), `tag=` only marks them; returns the monster, or a list when `count` is given |
+| `mu.monsters()` / `mu.tagged(tag)` | every monster on the level / those with that tag or boss key |
+| `mu.find_boss(key)` | the first with that key, if alive here |
+| `mu.set_phase(monster, n)` / `mu.heal(monster, n)` | its phase; hit points (negative takes them) |
+| `mu.hurt(monster, n)` | as if the player struck it: true if it died (the kill and its events are theirs) |
+| `mu.despawn(monster)` | gone, no loot, no kill |
+| `mu.portal{key=, at=, glyph=, colour=}` | a portal (`0`, red by default; an xterm colour) at a place, or somewhere open away from the doors; its place, or nil |
+| `mu.find_portal(key)` / `mu.close_portal(key)` | where it is / gone |
 | `mu.drop(what, place)` | a custom item by key, or a random item of a rarity ("epic") |
-| `mu.give(player, key)` | a custom item into a pack (false if full) |
+| `mu.give(player, what)` | a custom item by key, or a random one of a rarity, into a pack (false if full) |
 | `mu.teleport(player, place)` | moves a player on this level |
 | `mu.glow(place, tier)` | the loot glow animation |
 | `mu.players()` / `mu.player(name)` | players on this level / anyone online |
 | `mu.random(n)`, `mu.now()`, `mu.depth()` | 1..n; the time in seconds; this level |
 | `mu.set(key, value)` / `mu.get(key)` | kept in the database across restarts (`get` gives a string or nil) |
 | `mu.log(text)`, `print(...)` | to the server log |
+
+Monsters a script tags (boss= or tag=) count apart from the town's people:
+the town never sends them away. Their names, tags and keys are numbered
+for good in the database, so a saved level keeps them after a restart.
 
 ## Bosses
 

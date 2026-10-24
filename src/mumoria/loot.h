@@ -38,6 +38,8 @@ uint32_t mu_loot_tile_attr(Coord_t const &coord, char ch);
 
 // "epic" (or "3") -> MU_EPIC; -1 if no such tier.
 int mu_rarity_by_name(std::string const &name);
+// A random gear item of that tier, made into out (not on the floor).
+bool mu_loot_make_tier(int tier, Inventory_t &out);
 // A random gear item of that tier on the floor near `near`; false if no room.
 bool mu_loot_place_tier(int tier, Coord_t const &near);
 // Admin /makeloot <tier>: an item of that rarity beside the loaded player.

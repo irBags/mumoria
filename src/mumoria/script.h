@@ -17,6 +17,10 @@ std::string mu_script_reload();
 void mu_script_enter(MuSession *s, MuLevel *level);
 void mu_script_kill(int monster_id); // the loaded player killed it; still on the level
 void mu_script_hurt(int monster_id); // a script's boss was hurt and lives
+// The end of a player's turn: due mu.every timers run (once a second a level at most).
+void mu_script_tick(MuSession *s);
+// A monster's tag (Monster_t::mu_script) is a boss's: it drops a boss's loot.
+bool mu_script_is_boss(int tag);
 // A chat command no one else knew: true if a script took it.
 bool mu_script_command(MuSession *s, std::string const &cmd, std::string const &args);
 // "/a /b" of the scripts' commands, for /help ("" if none).

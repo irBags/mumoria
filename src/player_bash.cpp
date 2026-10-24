@@ -92,7 +92,7 @@ static void playerBashAttack(Coord_t coord) {
     if (!monster.lit) {
         (void) strcpy(name, "it");
     } else {
-        (void) snprintf(name, MORIA_MESSAGE_SIZE, "the %s", creature.name);
+        (void) snprintf(name, MORIA_MESSAGE_SIZE, "the %s", MU_NAME(monster, creature));
     }
 
     int base_to_hit = py.stats.used[PlayerAttr::A_STR];

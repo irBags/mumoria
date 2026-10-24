@@ -222,6 +222,7 @@ void playerThrowItem() {
 
                 if (playerTestBeingHit(tbth, (int) py.misc.level, tpth, (int) creatures_list[m_ptr.creature_id].ac, PlayerClassLevelAdj::BTHB)) {
                     int damage = m_ptr.creature_id;
+                    const char *victim = MU_NAME(m_ptr, creatures_list[damage]);
 
                     obj_desc_t description = {'\0'};
                     obj_desc_t msg = {'\0'};
@@ -232,7 +233,7 @@ void playerThrowItem() {
                         (void) snprintf(msg, MORIA_OBJ_DESC_SIZE, "You hear a cry as the %s finds a mark.", description);
                         visible = false;
                     } else {
-                        (void) snprintf(msg, MORIA_OBJ_DESC_SIZE, "The %s hits the %s.", description, creatures_list[damage].name);
+                        (void) snprintf(msg, MORIA_OBJ_DESC_SIZE, "The %s hits the %s.", description, victim);
                         visible = true;
                     }
                     printMessage(msg);
@@ -251,7 +252,7 @@ void playerThrowItem() {
                         if (!visible) {
                             printMessage("You have killed something!");
                         } else {
-                            (void) snprintf(msg, MORIA_OBJ_DESC_SIZE, "You have killed the %s.", creatures_list[damage].name);
+                            (void) snprintf(msg, MORIA_OBJ_DESC_SIZE, "You have killed the %s.", victim);
                             printMessage(msg);
                         }
                         displayCharacterExperience();

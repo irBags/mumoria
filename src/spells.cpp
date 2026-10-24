@@ -594,7 +594,7 @@ static void spellLightLineTouchesMonster(int monster_id) {
     // light up and draw monster
     monsterUpdateVisibility(monster_id);
 
-    auto name = monsterNameDescription(creature.name, monster.lit);
+    auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
     if ((creature.defenses & config::monsters::defense::CD_LIGHT) != 0) {
         if (monster.lit) {
@@ -763,10 +763,10 @@ static void spellGetAreaAffectFlags(int spell_type, uint32_t &weapon_type, int &
     }
 }
 
-static void printBoltStrikesMonsterMessage(Creature_t const &creature, const std::string &bolt_name, bool is_lit) {
+static void printBoltStrikesMonsterMessage(const char *name, const std::string &bolt_name, bool is_lit) {
     std::string monster_name;
     if (is_lit) {
-        monster_name = "the " + std::string(creature.name);
+        monster_name = "the " + std::string(name);
     } else {
         monster_name = "it";
     }
@@ -789,7 +789,7 @@ static void spellFireBoltTouchesMonster(Tile_t &tile, int damage, int harm_type,
     // draw monster and clear previous bolt
     putQIO();
 
-    printBoltStrikesMonsterMessage(creature, bolt_name, monster.lit);
+    printBoltStrikesMonsterMessage(MU_NAME(monster, creature), bolt_name, monster.lit);
 
     if ((harm_type & creature.defenses) != 0) {
         damage = damage * 2;
@@ -803,7 +803,7 @@ static void spellFireBoltTouchesMonster(Tile_t &tile, int damage, int harm_type,
         }
     }
 
-    auto name = monsterNameDescription(creature.name, monster.lit);
+    auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
     if (monsterTakeHit((int) tile.creature_id, damage) >= 0) {
         printMonsterActionText(name, "dies in a fit of agony.");
@@ -1191,7 +1191,7 @@ bool spellChangeMonsterHitPoints(Coord_t coord, int direction, int damage_hp) {
             Monster_t const &monster = monsters[tile.creature_id];
             Creature_t const &creature = creatures_list[monster.creature_id];
 
-            auto name = monsterNameDescription(creature.name, monster.lit);
+            auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
             if (monsterTakeHit((int) tile.creature_id, damage_hp) >= 0) {
                 printMonsterActionText(name, "dies in a fit of agony.");
@@ -1234,7 +1234,7 @@ bool spellDrainLifeFromMonster(Coord_t coord, int direction) {
             Creature_t const &creature = creatures_list[monster.creature_id];
 
             if ((creature.defenses & config::monsters::defense::CD_UNDEAD) == 0) {
-                auto name = monsterNameDescription(creature.name, monster.lit);
+                auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
                 if (monsterTakeHit((int) tile.creature_id, 75) >= 0) {
                     printMonsterActionText(name, "dies in a fit of agony.");
@@ -1281,7 +1281,7 @@ bool spellSpeedMonster(Coord_t coord, int direction, int speed) {
             Monster_t &monster = monsters[tile.creature_id];
             Creature_t const &creature = creatures_list[monster.creature_id];
 
-            auto name = monsterNameDescription(creature.name, monster.lit);
+            auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
             MU_ONLY(fx_end = MU_FX_AFFECT;)
 
             if (speed > 0) {
@@ -1335,7 +1335,7 @@ bool spellConfuseMonster(Coord_t coord, int direction) {
             Monster_t &monster = monsters[tile.creature_id];
             Creature_t const &creature = creatures_list[monster.creature_id];
 
-            auto name = monsterNameDescription(creature.name, monster.lit);
+            auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
             if (randomNumber(MON_MAX_LEVELS) < creature.level || ((creature.defenses & config::monsters::defense::CD_NO_SLEEP) != 0)) {
                 if (monster.lit && ((creature.defenses & config::monsters::defense::CD_NO_SLEEP) != 0)) {
@@ -1394,7 +1394,7 @@ bool spellSleepMonster(Coord_t coord, int direction) {
             Monster_t &monster = monsters[tile.creature_id];
             Creature_t const &creature = creatures_list[monster.creature_id];
 
-            auto name = monsterNameDescription(creature.name, monster.lit);
+            auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
             if (randomNumber(MON_MAX_LEVELS) < creature.level || ((creature.defenses & config::monsters::defense::CD_NO_SLEEP) != 0)) {
                 if (monster.lit && ((creature.defenses & config::monsters::defense::CD_NO_SLEEP) != 0)) {
@@ -1479,7 +1479,7 @@ bool spellWallToMud(Coord_t coord, int direction) {
             Creature_t const &creature = creatures_list[monster.creature_id];
 
             if ((creature.defenses & config::monsters::defense::CD_STONE) != 0) {
-                auto name = monsterNameDescription(creature.name, monster.lit);
+                auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
                 // Should get these messages even if the monster is not visible.
                 int creature_id = monsterTakeHit((int) tile.creature_id, 100);
@@ -1578,7 +1578,7 @@ bool spellPolymorphMonster(Coord_t coord, int direction) {
                     morphed = true;
                 }
             } else {
-                auto name = monsterNameDescription(creature.name, monster.lit);
+                auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
                 printMonsterActionText(name, "is unaffected.");
                 MU_ONLY(muFxRay(fx_from, direction, coord, MU_FX_MIND, MU_FX_RESIST); fx_from = coord;)
             }
@@ -1628,7 +1628,7 @@ bool spellBuildWall(Coord_t coord, int direction) {
                     damage = diceRoll(Dice_t{4, 8});
                 }
 
-                auto name = monsterNameDescription(creature.name, monster.lit);
+                auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
                 printMonsterActionText(name, "wails out in pain!");
 
@@ -1846,7 +1846,7 @@ bool spellSpeedAllMonsters(int speed) {
         Monster_t &monster = monsters[id];
         Creature_t const &creature = creatures_list[monster.creature_id];
 
-        auto name = monsterNameDescription(creature.name, monster.lit);
+        auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
         if (monster.distance_from_player > config::monsters::MON_MAX_SIGHT || !los(py.pos, monster.pos)) {
             continue; // do nothing
@@ -1885,7 +1885,7 @@ bool spellSleepAllMonsters() {
         Monster_t &monster = monsters[id];
         Creature_t const &creature = creatures_list[monster.creature_id];
 
-        auto name = monsterNameDescription(creature.name, monster.lit);
+        auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
         if (monster.distance_from_player > config::monsters::MON_MAX_SIGHT || !los(py.pos, monster.pos)) {
             continue; // do nothing
@@ -2010,7 +2010,7 @@ static void earthquakeHitsMonster(int monster_id) {
             damage = diceRoll(Dice_t{4, 8});
         }
 
-        auto name = monsterNameDescription(creature.name, monster.lit);
+        auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
         printMonsterActionText(name, "wails out in pain!");
 
@@ -2103,7 +2103,7 @@ bool spellDispelCreature(int creature_defense, int damage) {
 
             dispelled = true;
 
-            auto name = monsterNameDescription(creature.name, monster.lit);
+            auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
             int hit = monsterTakeHit(id, randomNumber(damage));
 
@@ -2132,7 +2132,7 @@ bool spellTurnUndead() {
         Creature_t const &creature = creatures_list[monster.creature_id];
 
         if (monster.distance_from_player <= config::monsters::MON_MAX_SIGHT && ((creature.defenses & config::monsters::defense::CD_UNDEAD) != 0) && los(py.pos, monster.pos)) {
-            auto name = monsterNameDescription(creature.name, monster.lit);
+            auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
             if (py.misc.level + 1 > creature.level || randomNumber(5) == 1) {
                 if (monster.lit) {

@@ -465,6 +465,9 @@ uint32_t mu_loot_tile_attr(Coord_t const &coord, char ch) {
         return 0;
     }
     Inventory_t const &item = game.treasure.list[id];
+    if (item.category_id == TV_STORE_DOOR && item.sub_category_id == 112 && item.sprite == (uint8_t) ch) {
+        return MU_ATTR_BOLD | MU_ATTR_FG(item.to_ac > 0 && item.to_ac < 256 ? item.to_ac : 199); // a script's portal
+    }
     int tier = mu_rarity(item);
     if (tier == MU_COMMON || item.sprite != (uint8_t) ch) {
         return 0;
@@ -589,6 +592,28 @@ bool mu_loot_place_tier(int tier, Coord_t const &near) {
         muFxLoot(spot, tier);
     }
     return true;
+}
+
+bool mu_loot_make_tier(int tier, Inventory_t &out) {
+    if (tier < MU_COMMON || tier >= MU_RARITY_COUNT) {
+        return false;
+    }
+    int id = popt();
+    Inventory_t &item = game.treasure.list[id];
+    bool made = false;
+    for (int tries = 0; tries < 500 && !made; tries++) {
+        inventoryItemCopyTo(sorted_objects[itemGetRandomObjectId(dg.current_level, false)], item);
+        made = eligible(item);
+    }
+    if (made) {
+        magicTreasureMagicalAbility(id, dg.current_level);
+        if (tier > MU_COMMON) {
+            make_rare(item, tier, dg.current_level);
+        }
+        out = item;
+    }
+    pusht((uint8_t) id);
+    return made;
 }
 
 std::string mu_loot_admin(MuSession *s, std::string const &arg) {

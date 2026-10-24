@@ -394,11 +394,11 @@ static void monsterAttackPlayer(int monster_id) {
     if (!monster.lit) {
         (void) strcpy(name, "It ");
     } else {
-        (void) snprintf(name, MORIA_MESSAGE_SIZE, "The %s ", creature.name);
+        (void) snprintf(name, MORIA_MESSAGE_SIZE, "The %s ", MU_NAME(monster, creature));
     }
 
     vtype_t death_description = {'\0'};
-    playerDiedFromString(&death_description, creature.name, creature.movement);
+    playerDiedFromString(&death_description, MU_NAME(monster, creature), creature.movement);
 
     int attack_counter = 0;
     for (auto &damage_type_id : creature.damage) {
@@ -908,13 +908,13 @@ static bool monsterCastSpell(int monster_id) {
     // Describe the attack
     vtype_t name = {'\0'};
     if (monster.lit) {
-        (void) snprintf(name, MORIA_MESSAGE_SIZE, "The %s ", creature.name);
+        (void) snprintf(name, MORIA_MESSAGE_SIZE, "The %s ", MU_NAME(monster, creature));
     } else {
         (void) strcpy(name, "It ");
     }
 
     vtype_t death_description = {'\0'};
-    playerDiedFromString(&death_description, creature.name, creature.movement);
+    playerDiedFromString(&death_description, MU_NAME(monster, creature), creature.movement);
 
     // Extract all possible spells into spell_choice
     int spell_choice[30];
@@ -1337,7 +1337,7 @@ static void monsterAttackingUpdate(Monster_t &monster, int monster_id, int moves
                 if (monster.stunned_amount == 0) {
                     if (monster.lit) {
                         vtype_t msg = {'\0'};
-                        (void) snprintf(msg, MORIA_MESSAGE_SIZE, "The %s ", creatures_list[monster.creature_id].name);
+                        (void) snprintf(msg, MORIA_MESSAGE_SIZE, "The %s ", MU_NAME(monster, creatures_list[monster.creature_id]));
                         printMessage(strcat(msg, "recovers and glares at you."));
                     }
                 }
@@ -1582,7 +1582,7 @@ bool monsterSleep(Coord_t coord) {
             Monster_t &monster = monsters[monster_id];
             Creature_t const &creature = creatures_list[monster.creature_id];
 
-            auto name = monsterNameDescription(creature.name, monster.lit);
+            auto name = monsterNameDescription(MU_NAME(monster, creature), monster.lit);
 
             if (randomNumber(MON_MAX_LEVELS) < creature.level || ((creature.defenses & config::monsters::defense::CD_NO_SLEEP) != 0)) {
                 if (monster.lit && ((creature.defenses & config::monsters::defense::CD_NO_SLEEP) != 0)) {

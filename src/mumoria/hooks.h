@@ -109,6 +109,11 @@ void muLootDropping(bool dropping);
 // A rare item appears (or is found): a glow in its rarity's colour.
 void muFxLoot(Coord_t at, int tier);
 
+// Scripts (script.cpp): a monster's name (its own, if a script gave it one);
+// a script's portal (store door 112, its key in the inscription) stepped on.
+const char *muMonsterName(Monster_t const &monster);
+void muScriptPortal(const char *key);
+
 // Raids (raid.cpp): a raid gate (110) or a raid's way out (111) stepped on.
 void muRaidGate(int sub_category_id);
 // A monster was hurt and lives (a raid's lord calls its guard).
