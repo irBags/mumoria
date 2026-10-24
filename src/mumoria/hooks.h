@@ -21,6 +21,9 @@ bool muOtherPlayerAt(Coord_t const &coord);
 // "@" in its colours, an item in its rarity's; 0 for plain.
 uint32_t muTileAttr(Coord_t const &coord, char ch);
 const char *muOtherPlayerNameAt(Coord_t const &coord);
+// Moving onto coord: the name of a player there who is not in the mover's
+// party (they block it); null if the way is clear (party members walk through).
+const char *muPlayerInTheWay(Coord_t const &coord);
 // Is another player on this level closer to coord than `distance`?
 bool muNearerPlayer(Coord_t const &coord, int distance);
 

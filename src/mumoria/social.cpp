@@ -179,7 +179,7 @@ static void party_drop(MuSession *s) {
     }
 }
 
-static void party_invite(MuSession *s, const std::string &who) {
+static void invite_one(MuSession *s, const std::string &who) {
     MuSession *t = online(who);
     if (t == nullptr || !t->in_game || t == s) {
         say(s, "Nobody by that name is in the game.");
@@ -200,6 +200,28 @@ static void party_invite(MuSession *s, const std::string &who) {
     t->invited_by = s->account.id;
     say(t, s->char_name + " invites you to a party. Type /accept or /decline.");
     say(s, "You invite " + t->char_name + ".");
+}
+
+// /invite name, or several: /invite Bob, Al,Sue
+static void party_invite(MuSession *s, const std::string &names) {
+    size_t start = 0;
+    bool any = false;
+    while (start <= names.size()) {
+        size_t comma = names.find(',', start);
+        std::string one = names.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+        size_t a = one.find_first_not_of(' '), b = one.find_last_not_of(' ');
+        if (a != std::string::npos) {
+            invite_one(s, one.substr(a, b - a + 1));
+            any = true;
+        }
+        if (comma == std::string::npos) {
+            break;
+        }
+        start = comma + 1;
+    }
+    if (!any) {
+        say(s, "Use: /invite name, or /invite name, name, name");
+    }
 }
 
 static void party_accept(MuSession *s) {
@@ -1205,7 +1227,7 @@ static void help(MuSession *s) {
         "  '  then /t name msg private message    /r msg    reply",
         "  \"  then a direction attack a player (both need PvP on; never in town)",
         "  /who                who is in the game",
-        "  /invite name        invite to your party;  /accept  /decline",
+        "  /invite a, b, c     invite to your party;  /accept  /decline",
         "  /leave  /party      leave, or list your party;  /pkick name",
         "  /party turns on|off battle turns for your party (leader)",
         "  /trade name         trade with a player on your level",

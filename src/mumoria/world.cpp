@@ -838,6 +838,20 @@ const char *muOtherPlayerNameAt(Coord_t const &coord) {
     return p != nullptr ? p->char_name.c_str() : nullptr;
 }
 
+const char *muPlayerInTheWay(Coord_t const &coord) {
+    if (loaded_level == nullptr) {
+        return nullptr;
+    }
+    for (MuSession *p : loaded_level->players) {
+        bool there = p != loaded_player && !p->in_building && p->ctx.py.pos.y == coord.y && p->ctx.py.pos.x == coord.x;
+        bool friend_ = loaded_player != nullptr && loaded_player->party != nullptr && p->party == loaded_player->party;
+        if (there && !friend_) {
+            return p->char_name.c_str(); // anyone else there blocks, even beside a party member
+        }
+    }
+    return nullptr;
+}
+
 bool muNearerPlayer(Coord_t const &coord, int distance) {
     if (loaded_level == nullptr) {
         return false;

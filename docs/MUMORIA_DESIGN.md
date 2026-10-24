@@ -209,7 +209,12 @@ steps, and what stays compatible.
 
 * **Why:** play together on one level, with Umoria's own rules.
 * **Files:** `src/mumoria/social.cpp` (`/invite`, `/accept`, `/decline`,
-  `/leave`, `/kick`, `/p`).
+  `/leave`, `/kick`, `/p`). `/invite` takes several names, separated by
+  commas (`/invite Bob, Alan`).
+* **Walking through:** players block each other's way, but never their own
+  party's: a member walks onto a member's square, and they share it
+  (`world.cpp` `muPlayerInTheWay`, `player_move.cpp`). Anyone else there
+  still blocks.
 * **DB:** none. Parties live for as long as the session does, as in the python
   port.
 * **Arriving together:** below the town, a member who comes onto a level

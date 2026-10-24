@@ -468,11 +468,12 @@ void playerMove(int direction, bool do_pickup) {
     Monster_t const &monster = monsters[tile.creature_id];
 
 #ifdef MUMORIA
-    // players block each other; bumping costs no turn (never an attack). A
-    // town building's doorway is shared: whoever is inside stands on it.
+    // players block each other, but never their own party; bumping costs no
+    // turn (never an attack). A town building's doorway is shared: whoever
+    // is inside stands on it.
     bool doorway = dg.current_level == 0 && tile.treasure_id != 0 && game.treasure.list[tile.treasure_id].category_id == TV_STORE_DOOR;
     if (tile.creature_id < 2 && !doorway) {
-        const char *other = muOtherPlayerNameAt(coord);
+        const char *other = muPlayerInTheWay(coord);
         if (other != nullptr) {
             playerEndRunning();
             printMessage((std::string(other) + " is in your way.").c_str());
