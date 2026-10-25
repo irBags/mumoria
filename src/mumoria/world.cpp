@@ -313,7 +313,7 @@ struct LevelHeader {
 };
 
 static std::vector<uint8_t> level_blob(MuLevel *L) {
-    LevelHeader h{{'M', 'U', 'L', '1'}, 1, sizeof(Tile_t), sizeof(Monster_t), sizeof(Inventory_t),
+    LevelHeader h{{'M', 'U', 'L', '1'}, 2, sizeof(Tile_t), sizeof(Monster_t), sizeof(Inventory_t),
                   L->depth, L->height, L->width, L->game_turn, L->next_free_monster_id, L->monster_multiply_total, L->treasure_current_id};
     std::vector<uint8_t> blob(sizeof(h) + sizeof(L->floor) + sizeof(L->monsters) + sizeof(L->treasure));
     uint8_t *p = blob.data();
@@ -335,7 +335,7 @@ static MuLevel *level_from_blob(const void *data, int len) {
     memcpy(&h, data, sizeof(h));
     auto *L = new MuLevel();
     size_t want = sizeof(h) + sizeof(L->floor) + sizeof(L->monsters) + sizeof(L->treasure);
-    if (memcmp(h.magic, "MUL1", 4) != 0 || h.version != 1 || h.tile_size != sizeof(Tile_t) || h.monster_size != sizeof(Monster_t) ||
+    if (memcmp(h.magic, "MUL1", 4) != 0 || (h.version != 1 && h.version != 2) || h.tile_size != sizeof(Tile_t) || h.monster_size != sizeof(Monster_t) ||
         h.item_size != sizeof(Inventory_t) || (size_t) len != want) {
         delete L;
         return nullptr; // another build's layout: the level is made anew
@@ -353,6 +353,18 @@ static MuLevel *level_from_blob(const void *data, int len) {
     L->next_free_monster_id = (int16_t) h.next_free;
     L->monster_multiply_total = (int16_t) h.multiply;
     L->treasure_current_id = (int16_t) h.treasure_id;
+    if (h.version < 2) {
+        // Version 1 kept Umoria's speeds relative to whoever was loaded, and
+        // they crept up (+1 at 50 ft, +2 at 100 ft: two or three moves a
+        // turn). Each monster gets its own speed back; a boss its one step more.
+        for (int i = config::monsters::MON_MIN_INDEX_ID; i < L->next_free_monster_id && i < MON_TOTAL_ALLOCATIONS; i++) {
+            Monster_t &m = L->monsters[i];
+            if (m.creature_id < MON_MAX_CREATURES) {
+                bool boss = m.mu_boss != 0 || m.mu_script != 0;
+                m.speed = (int16_t) (creatures_list[m.creature_id].speed - 10 + (boss ? 1 : 0));
+            }
+        }
+    }
     return L;
 }
 

@@ -1373,7 +1373,13 @@ void updateMonsters(bool attack) {
 
         // Attack is argument passed to CREATURE
         if (attack) {
+#ifdef MUMORIA
+            // its own speed against that of the player whose turn it is
+            // (Umoria folds the player's into every monster: player.cpp)
+            int moves = monsterMovementRate((int16_t) (monster.speed + py.flags.speed));
+#else
             int moves = monsterMovementRate(monster.speed);
+#endif
 
 #ifdef MUMORIA
             // below the town, a monster answers only the turns of the player
@@ -1410,6 +1416,7 @@ int monsterTakeHit(int monster_id, int damage) {
 
     monster.sleep_count = 0;
     monster.hp -= damage;
+    MU_ONLY(muFxDamage(monster.pos, damage, false);) // green, for whoever hit it
 
     if (monster.hp >= 0) {
         MU_ONLY(muMonsterHurt(monster_id);)

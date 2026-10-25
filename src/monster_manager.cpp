@@ -49,7 +49,12 @@ bool monsterPlaceNew(Coord_t coord, int creature_id, bool sleeping) {
     }
 
     // the creatures_list[] speed value is 10 greater, so that it can be a uint8_t
+#ifdef MUMORIA
+    // its own speed: whose turn it is adds theirs (monster.cpp, updateMonsters)
+    monster.speed = (int16_t) (creatures_list[creature_id].speed - 10);
+#else
     monster.speed = (int16_t) (creatures_list[creature_id].speed - 10 + py.flags.speed);
+#endif
     monster.stunned_amount = 0;
     monster.distance_from_player = (uint8_t) coordDistanceBetween(py.pos, coord);
     monster.lit = false;
@@ -114,7 +119,11 @@ void monsterPlaceWinning() {
     }
 
     // the creatures_list speed value is 10 greater, so that it can be a uint8_t
+#ifdef MUMORIA
+    monster.speed = (int16_t) (creatures_list[creature_id].speed - 10); // as in monsterPlaceNew()
+#else
     monster.speed = (int16_t) (creatures_list[creature_id].speed - 10 + py.flags.speed);
+#endif
     monster.stunned_amount = 0;
     monster.distance_from_player = (uint8_t) coordDistanceBetween(py.pos, coord);
 

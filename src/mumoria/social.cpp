@@ -619,6 +619,7 @@ static void pvp_attack(MuSession *s) {
             t->pending_pvp_damage += damage;
             t->pvp_attacker = s->char_name;
             t->event_pending = true;
+            muFxDamage(at, damage, false); // green for the attacker; red for them when it lands
         }
         say(t, damage > 0 ? s->char_name + " strikes you for " + std::to_string(damage) + "!" : s->char_name + " attacks you, and misses.");
         mu_conn_poke(t->conn);

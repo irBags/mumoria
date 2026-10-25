@@ -521,6 +521,7 @@ int muGetKey() {
     long waited_ms = 0;
 
     if (s->at_top && s->level != nullptr) {
+        muFxDamageShow(); // after a command that ended no turn (a blow from a player)
         apply_pending(s);
         if (s->view_stale) {
             refresh_view(s);
@@ -668,6 +669,7 @@ void muEndGame() {
 }
 
 void muTurnDone() {
+    muFxDamageShow(); // damage numbers no animation took
     mu_self->did_act = true;
     mu_round_acted(mu_self);
     mu_script_tick(mu_self); // script.cpp: mu.every timers, at most once a second a level

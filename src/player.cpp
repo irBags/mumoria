@@ -375,9 +375,16 @@ void playerChangeSpeed(int speed) {
     py.flags.speed += speed;
     py.flags.status |= config::player::status::PY_SPEED;
 
+#ifndef MUMORIA
+    // Umoria keeps monsters' speeds relative to the player's. A level is
+    // shared in Mumoria: one player's change would speed or slow everyone's
+    // monsters, and a heavy pack taken down the stairs left the level behind
+    // it faster for good (+1, +2: two or three moves a turn). Mumoria adds
+    // the player's speed when a monster moves instead (monster.cpp).
     for (int i = next_free_monster_id - 1; i >= config::monsters::MON_MIN_INDEX_ID; i--) {
         monsters[i].speed += speed;
     }
+#endif
 }
 
 // Player bonuses -RAK-
@@ -648,6 +655,7 @@ void playerTakesHit(int damage, const char *creature_name_label) {
         damage = 0;
     }
     py.misc.current_hp -= damage;
+    MU_ONLY(muFxDamage(py.pos, damage, true);) // red, over your @
 
     if (py.misc.current_hp >= 0) {
         printCharacterCurrentHitPoints();

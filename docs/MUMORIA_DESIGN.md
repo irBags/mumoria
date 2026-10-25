@@ -464,6 +464,13 @@ steps, and what stays compatible.
     turned aside when you resist; drain mana flows from you to it; a summoned
     monster appears in a ring; teleporting shows where it was
 * The animations use their own random numbers, never the engine's.
+* **Damage numbers:** the damage done rises from the square for the player
+  whose fight it is: green over what they hit (`monsterTakeHit`, and a PvP
+  blow), red over their own `@` (`playerTakesHit`: blows, spells, traps,
+  poison, starvation). The engine takes the damage just before it queues
+  the blow or the bolt, so a number waits (`muFxDamage`) and shows at that
+  animation's moment of impact (`Anim::impact`); any left show when the turn
+  ends (`muFxDamageShow`). Others nearby see only the animation.
 
 ### 2.19 The town's stores, shared
 
@@ -858,6 +865,18 @@ of the following against the built server:
   monsters on an idle player (the server died); fixed, 224 drops and no
   crash. Umoria's breeding, summoning and new monsters now avoid players'
   squares, and a door does not close on one
+* monster speed, 2026-10-24: Umoria keeps every monster's speed relative to
+  the player's (placed with it, and shifted on each `playerChangeSpeed`). On
+  a shared level that drifted: a heavy pack taken down the stairs left the
+  level behind faster for good, as the save that undoes it lands on the new
+  level. Mike's 50 ft had 18 of 25 monsters at +1 (two moves a turn), 100
+  ft 20 of 21 at +2 (three). Now a monster keeps its own speed and the
+  player's whose turn it is is added when it moves (`monster.cpp`); levels
+  saved before (version 1) get their monsters' own speeds back on load (a
+  boss one step more). Measured again after loading them: 0 drift on both
+* damage numbers (2.18): a bot fighting a jackal saw green numbers one row
+  over the jackal, then a row higher and dimmer, and red ones over its `@`
+  for each bite, the values the engine dealt
 * `^X` (save and exit), 2026-10-24: Umoria's ends in `endGame()`, whose hook
   recorded every call as a death, so `^X` killed the character (8 lost since
   2026-10-22, "(saved)" in the graveyard; the `mumoria_tmp_<pid>.sav` files

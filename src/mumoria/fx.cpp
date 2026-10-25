@@ -45,6 +45,17 @@ const int BACKLOG_MS = 1500; // never queued further ahead than this
 const Coord_t RING[8] = {{-1, 0}, {-1, 1}, {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}};
 
 thread_local int64_t cursor = 0; // when this player's animations are free again
+
+// Damage numbers (muFxDamage): the engine takes the damage just before it
+// plays the blow or the bolt, so a number waits for that animation and shows
+// at its moment of impact; any left are shown when the turn ends.
+struct Number {
+    Coord_t at;
+    int amount;
+    bool taken; // red over your @; else green over what you hit
+};
+thread_local std::vector<Number> numbers;
+const int NUMBER_MS = 450; // each of its two heights
 thread_local int together = 0;
 thread_local int64_t together_start = -1, together_end = 0;
 thread_local uint32_t seed = 2463534242u;
@@ -132,6 +143,35 @@ class Anim {
         sounds_.push_back(Sound{at, c, name});
     }
 
+    // When the blow lands or the bolt bursts: waiting damage numbers show then.
+    void impact(int at) {
+        impact_ = at;
+    }
+
+    // The waiting damage numbers, from this animation's impact (its start if
+    // none): over the square, then a row higher, fading. Only the player whose
+    // fight it is sees them (the one loaded: attacker or victim).
+    void show_numbers() {
+        MuSession *viewer = mu_player_loaded();
+        if (viewer != nullptr) {
+            std::vector<MuFxCell> cells;
+            int64_t t0 = start_ + (impact_ >= 0 ? impact_ : 0);
+            for (Number const &n : numbers) {
+                std::string digits = std::to_string(n.amount);
+                int x0 = n.at.x - ((int) digits.size() - 1) / 2;
+                for (int rise = 0; rise < 2; rise++) {
+                    uint32_t look = rise == 0 ? fg(n.taken ? 196 : 46) : MU_ATTR_FG(n.taken ? 160 : 34);
+                    int64_t from = t0 + rise * NUMBER_MS;
+                    for (size_t i = 0; i < digits.size(); i++) {
+                        cells.push_back(MuFxCell{from, from + NUMBER_MS, (int16_t) (n.at.y - 1 - rise), (int16_t) (x0 + (int) i), digits[i], look});
+                    }
+                }
+            }
+            mu_vt_fx_add(mu_screen_of(viewer), cells.data(), (int) cells.size());
+        }
+        numbers.clear();
+    }
+
     void put(int at, int ms, Coord_t c, char ch, uint32_t attr) {
         if (!on_level(c) || ms <= 0) {
             return;
@@ -146,7 +186,14 @@ class Anim {
     // to everyone near enough to hear them (lock held).
     void play() {
         MuSession *self = mu_self;
-        if (self == nullptr || self->level == nullptr || (cells_.empty() && sounds_.empty())) {
+        if (self == nullptr || self->level == nullptr) {
+            numbers.clear();
+            return;
+        }
+        if (!numbers.empty()) {
+            show_numbers();
+        }
+        if (cells_.empty() && sounds_.empty()) {
             return;
         }
         int64_t end = start_ + length_;
@@ -210,6 +257,7 @@ class Anim {
     std::vector<MuFxCell> cells_;
     int64_t start_;
     int length_ = 0;
+    int impact_ = -1;
 };
 
 // The four squares beside c (diagonal: the four corners). ch 0: pointing outwards.
@@ -410,6 +458,7 @@ void muFxRay(Coord_t from, int direction, Coord_t end, int element, int outcome,
     char head = glyph != 0 ? glyph : element == MU_FX_LIGHTNING || element == MU_FX_PHYSICAL ? radial(d) : p.glyph;
     Anim a;
     int t = flight(a, from, direction, end, p, head, element);
+    a.impact(t);
     switch (outcome) {
         case MU_FX_HIT:
         case MU_FX_KILL: {
@@ -451,6 +500,7 @@ void muFxBall(Coord_t from, int direction, Coord_t center, int element) {
     int t = same(from, center) ? 0 : flight(a, from, direction, center, p, head, element);
     blast(a, t, center, p);
     a.sound(t, center, "blast");
+    a.impact(t);
     a.play();
 }
 
@@ -478,6 +528,7 @@ void muFxBreath(Coord_t from, Coord_t center, int element) {
     int t = aim(a, from, center, p, 20);
     blast(a, t, center, p);
     a.sound(t, center, "blast");
+    a.impact(t);
     a.play();
 }
 
@@ -486,6 +537,7 @@ void muFxBolt(Coord_t from, Coord_t to, int element, int outcome) {
     Coord_t d{sign(to.y - from.y), sign(to.x - from.x)};
     Anim a;
     int t = aim(a, from, to, p, STEP_MS);
+    a.impact(t);
     if (outcome == MU_FX_RESIST) {
         glance(a, t, to, d, p.glyph, p, true);
     } else if (outcome == MU_FX_AFFECT) {
@@ -586,6 +638,7 @@ void muFxSwing(Coord_t from, Coord_t target, int weapon, int outcome, bool criti
 
     Anim a;
     a.sound(F, target, !hit ? "miss" : critical ? "crit" : "hit");
+    a.impact(F);
     int t = 0;
     switch (weapon_kind(weapon)) {
         case Weapon::Blade: // swords and daggers: a slash
@@ -660,6 +713,19 @@ void muSound(Coord_t at, const char *name) {
     Anim a;
     a.sound(0, at, name);
     a.play();
+}
+
+void muFxDamage(Coord_t at, int amount, bool taken) {
+    if (amount > 0) {
+        numbers.push_back(Number{at, amount, taken});
+    }
+}
+
+void muFxDamageShow() {
+    if (!numbers.empty()) {
+        Anim a; // starts when this player's animations so far have played
+        a.play();
+    }
 }
 
 MuFxTogether::MuFxTogether() {

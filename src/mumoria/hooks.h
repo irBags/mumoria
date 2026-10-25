@@ -93,6 +93,12 @@ void muFxBolt(Coord_t from, Coord_t to, int element, int outcome);
 void muFxMonsterBlow(Coord_t from, Coord_t target, int description, bool hit, bool seen);
 // One melee blow; weapon is the wielded item's category (TV_*).
 void muFxSwing(Coord_t from, Coord_t target, int weapon, int outcome, bool critical);
+// Damage as a number over the map, for the player whose fight it is: green
+// over what they hit (taken false), red over their own @ (taken true). It
+// shows at the next animation's moment of impact, or by muFxDamageShow()
+// (the turn's end) if no animation comes.
+void muFxDamage(Coord_t at, int amount, bool taken);
+void muFxDamageShow();
 // A sound from square at, for everyone near enough to hear it (fx.cpp);
 // the animations above make their own. Names: client/sounds/README.md.
 void muSound(Coord_t at, const char *name);
