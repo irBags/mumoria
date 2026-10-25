@@ -22,7 +22,7 @@ items.
   database.
 * **Accounts.** Log in with a name and password; one account holds several
   characters, plus its bank and guild, which outlive a character's death.
-  AOL members of the P3OL server can be handed in with a token.
+  (AOL members of the P3OL server can be handed in with a token. - NIY)
 * **Parties** of up to five: shared experience and gold, loot rolled for
   (d100), arriving together below the town, and optional battle turns.
 * **Guilds** with ranks and permissions, a guild bank, a message of the
@@ -32,7 +32,7 @@ items.
   keep anyone waiting: each player has their own stock, and a shared supply
   can run out for everyone.
 * **Chat:** the level, world, guild, party and private messages, in a chat
-  pane under the map; world chat can be relayed to an IRC channel.
+  pane under the map; (world chat can be relayed to an IRC channel. - WIP)
 * **Trade** between two players, both confirming, in one database
   transaction.
 * **Player against player**, only between characters that both chose it,
@@ -61,7 +61,6 @@ items.
 ## Building
 
 Linux (or WSL) with CMake, a C++ compiler and the SQLite runtime library:
-
     cmake -S . -B build && cmake --build build
 
 That builds `build/umoria/mumoria-server`, `build/umoria/mumoria-client`
@@ -112,16 +111,16 @@ Death is permanent, as in Umoria. Your bank and guild belong to the account.
 
 ## Where things are
 
-| Path | What |
-|---|---|
-| `src/` | the Umoria 5.7 engine, with `#ifdef MUMORIA` hooks |
-| `src/mumoria/` | the server: sessions, world, database, social, stores, bosses, raids, loot, items, scripts |
-| `src/lua/` | Lua 5.4.9, vendored |
-| `scripts/` | Lua scripts; `scripts/README.md` is the guide, `scripts/examples/` the examples |
-| `client/` | the small terminal client |
-| `data/` | the help, welcome, version and death screens |
-| `docs/MUMORIA_DESIGN.md` | the design: every feature, its files, its tables, what was tested |
-| `historical/` | Umoria's own history and documents |
+| Path                     | What                                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------ |
+| `src/`                   | the Umoria 5.7 engine, with `#ifdef MUMORIA` hooks                                         |
+| `src/mumoria/`           | the server: sessions, world, database, social, stores, bosses, raids, loot, items, scripts |
+| `src/lua/`               | Lua 5.4.9, vendored                                                                        |
+| `scripts/`               | Lua scripts; `scripts/README.md` is the guide, `scripts/examples/` the examples            |
+| `client/`                | the small terminal client                                                                  |
+| `data/`                  | the help, welcome, version and death screens                                               |
+| `docs/MUMORIA_DESIGN.md` | the design: every feature, its files, its tables, what was tested                          |
+| `historical/`            | Umoria's own history and documents                                                         |
 
 ## Credits and license
 
