@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 
 #include "../lua/lua.hpp"
 #include "items.h"
@@ -96,6 +97,7 @@ Registry names{"monster_name", {}};     // Monster_t::mu_name
 std::vector<std::string> boss_tags;     // the tags mu.boss and boss= made bosses of (they drop a boss's loot)
 std::map<std::string, int> boss_max_hp; // "depth:key" -> hit points when made
 std::map<MuLevel *, time_t> ticked;     // when each level's timers last ran
+std::set<int> held;                     // tags whose monsters the script moves (mu.hold)
 
 void *alloc(void *, void *ptr, size_t osize, size_t nsize) {
     if (ptr == nullptr) {
@@ -744,6 +746,138 @@ int l_hurt(lua_State *l) {
     return 1;
 }
 
+// --- floor items, and monsters a script walks ----------------------------------
+
+bool pickable(Coord_t const &c) {
+    int id = dg.floor[c.y][c.x].treasure_id;
+    return id != 0 && game.treasure.list[id].category_id <= TV_MAX_PICK_UP;
+}
+
+// mu.items(): every item on this level's floor, {x, y, name, age}
+int l_items(lua_State *l) {
+    need_world(l);
+    lua_newtable(l);
+    int n = 0;
+    for (int y = 1; y < dg.height - 1; y++) {
+        for (int x = 1; x < dg.width - 1; x++) {
+            Coord_t c{y, x};
+            if (!pickable(c)) {
+                continue;
+            }
+            obj_desc_t name;
+            itemDescription(name, game.treasure.list[dg.floor[y][x].treasure_id], true);
+            push_place(l, c);
+            set_str(l, "name", name);
+            set_int(l, "age", std::max(0, mu_town_item_age(c)));
+            lua_rawseti(l, -2, ++n);
+        }
+    }
+    return 1;
+}
+
+// mu.take(place): the item there is gone; its name, or nil
+int l_take(lua_State *l) {
+    need_world(l);
+    Coord_t at = coord_arg(l, 1);
+    if (!pickable(at)) {
+        lua_pushnil(l);
+        return 1;
+    }
+    obj_desc_t name;
+    itemDescription(name, game.treasure.list[dg.floor[at.y][at.x].treasure_id], true);
+    (void) dungeonDeleteObject(at);
+    dungeonLiteSpot(at);
+    mu_level_loaded()->dirty = true;
+    lua_pushstring(l, name);
+    return 1;
+}
+
+// Open floor a walker may cross: no wall, door or stairs (items are fine).
+bool walkable(Coord_t const &c) {
+    Tile_t const &t = dg.floor[c.y][c.x];
+    return c.y > 0 && c.x > 0 && c.y < dg.height - 1 && c.x < dg.width - 1 && t.feature_id <= MAX_OPEN_SPACE &&
+           (t.treasure_id == 0 || pickable(c));
+}
+
+// mu.walk(monster, place, steps): up to `steps` squares along the shortest way
+// there, waiting when someone is in it. Where it is now, or nil if it cannot get there.
+int l_walk(lua_State *l) {
+    need_world(l);
+    int id = monster_arg(l, 1);
+    Coord_t to = coord_arg(l, 2);
+    int steps = std::max(1, std::min(10, (int) luaL_optinteger(l, 3, 1)));
+    if (id < 0) {
+        lua_pushnil(l);
+        return 1;
+    }
+    // squares from `to`, breadth first
+    static std::vector<int16_t> dist;
+    dist.assign((size_t) MAX_HEIGHT * MAX_WIDTH, -1);
+    std::vector<Coord_t> queue{to};
+    dist[(size_t) (to.y * MAX_WIDTH + to.x)] = 0;
+    for (size_t q = 0; q < queue.size(); q++) {
+        Coord_t c = queue[q];
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                Coord_t n{c.y + dy, c.x + dx};
+                if (walkable(n) && dist[(size_t) (n.y * MAX_WIDTH + n.x)] < 0) {
+                    dist[(size_t) (n.y * MAX_WIDTH + n.x)] = (int16_t) (dist[(size_t) (c.y * MAX_WIDTH + c.x)] + 1);
+                    queue.push_back(n);
+                }
+            }
+        }
+    }
+    Monster_t &m = monsters[id];
+    if (dist[(size_t) (m.pos.y * MAX_WIDTH + m.pos.x)] < 0) {
+        lua_pushnil(l);
+        return 1;
+    }
+    for (int s = 0; s < steps; s++) {
+        Coord_t here{m.pos.y, m.pos.x}, best = here;
+        int best_d = dist[(size_t) (here.y * MAX_WIDTH + here.x)];
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                Coord_t n{here.y + dy, here.x + dx};
+                int d = walkable(n) ? dist[(size_t) (n.y * MAX_WIDTH + n.x)] : -1;
+                if (d >= 0 && d < best_d && dg.floor[n.y][n.x].creature_id == 0 && !muOtherPlayerAt(n)) {
+                    best = n;
+                    best_d = d;
+                }
+            }
+        }
+        if (best.y == here.y && best.x == here.x) {
+            break; // there, or someone is in the way
+        }
+        dungeonMoveCreatureRecord(here, best);
+        if (m.lit) {
+            m.lit = false;
+            dungeonLiteSpot(here);
+        }
+        m.pos.y = best.y;
+        m.pos.x = best.x;
+        m.distance_from_player = (uint8_t) coordDistanceBetween(py.pos, best);
+        monsterUpdateVisibility(id);
+    }
+    mu_level_loaded()->dirty = true;
+    push_place(l, Coord_t{m.pos.y, m.pos.x});
+    return 1;
+}
+
+// mu.hold(tag): the engine gives monsters with this tag no turns of their own
+int l_hold(lua_State *l) {
+    int tag = tags.get(luaL_checkstring(l, 1));
+    if (tag != 0) {
+        held.insert(tag);
+    }
+    return 0;
+}
+
+// mu.town_expiry(on): false leaves clearing the town's floor to the script
+int l_town_expiry(lua_State *l) {
+    mu_town_expiry = lua_toboolean(l, 1) != 0;
+    return 0;
+}
+
 int l_set_phase(lua_State *l) {
     int id = monster_arg(l, 1);
     if (id >= 0) {
@@ -924,6 +1058,7 @@ const luaL_Reg MU[] = {
     {"item", l_item},         {"tell", l_tell},     {"say_level", l_say_level}, {"say_world", l_say_world}, {"spawn", l_spawn},
     {"monsters", l_monsters}, {"find_boss", l_find_boss}, {"tagged", l_tagged}, {"despawn", l_despawn},
     {"portal", l_portal},     {"find_portal", l_find_portal}, {"close_portal", l_close_portal}, {"set_phase", l_set_phase}, {"hurt", l_hurt}, {"heal", l_heal},   {"drop", l_drop},
+    {"items", l_items},       {"take", l_take},     {"walk", l_walk},           {"hold", l_hold},           {"town_expiry", l_town_expiry},
     {"give", l_give},         {"teleport", l_teleport}, {"player", l_player}, {"players", l_players},     {"glow", l_glow},           {"random", l_random},
     {"now", l_now},           {"depth", l_depth},   {"log", l_log},             {"set", l_set},             {"get", l_get},
     {"_error", l_error},      {"_boss_key", l_boss_key}, {nullptr, nullptr},
@@ -1050,6 +1185,8 @@ end)
 
 void open_state() {
     memory = 0;
+    held.clear();
+    mu_town_expiry = true; // until a script takes the job
     L = lua_newstate(alloc, nullptr);
     lua_atpanic(L, [](lua_State *l) -> int {
         fprintf(stderr, "mumoria script: panic: %s\n", lua_tostring(l, -1));
@@ -1192,6 +1329,10 @@ void mu_script_tick(MuSession *s) {
 bool mu_script_is_boss(int tag) {
     std::string const *key = tags.at(tag);
     return key != nullptr && std::find(boss_tags.begin(), boss_tags.end(), *key) != boss_tags.end();
+}
+
+bool muMonsterHeld(Monster_t const &monster) {
+    return monster.mu_script != 0 && held.count(monster.mu_script) != 0;
 }
 
 const char *muMonsterName(Monster_t const &monster) {

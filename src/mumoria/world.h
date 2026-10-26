@@ -117,6 +117,13 @@ bool mu_char_store(MuSession *s);
 // Saves levels that changed and drops long-empty ones (lock held).
 void mu_world_maintain(bool force_all);
 
+// Town litter: items on the town's floor go after MU_TOWN_ITEM_MINUTES
+// (checked once a second, on a turn in the town). A script can take the job
+// over (mu_town_expiry = false). Age in seconds, -1 if none is known there.
+void mu_town_litter();
+int mu_town_item_age(Coord_t const &coord);
+extern bool mu_town_expiry;
+
 const char *mu_depth_name(int depth, char *buf, size_t max);
 
 // --- implementation of the template ----------------------------------------

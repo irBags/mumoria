@@ -1387,6 +1387,9 @@ void updateMonsters(bool attack) {
             if (dg.current_level != 0 && muNearerPlayer(Coord_t{monster.pos.y, monster.pos.x}, monster.distance_from_player)) {
                 moves = 0;
             }
+            if (muMonsterHeld(monster)) {
+                moves = 0; // a script moves it
+            }
 #endif
 
             if (moves <= 0) {

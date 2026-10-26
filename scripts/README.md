@@ -13,6 +13,8 @@ order. An admin's `/reload` loads them all again without a restart, and
 * `30_bounties.lua`: kill counting, rewards, a `/bounty` command.
 * `40_demon_breach.lua`: a raid in the town: a portal, waves of named
   demons, two Pit Fiends, a Demon Lord with phases, rewards, a cool-down.
+* `garbage_man.lua`: an NPC who sweeps up the town's litter every half hour
+  and cannot be killed by blows.
 
 ## What a script may do
 
@@ -97,6 +99,10 @@ These work inside an event or command (on the level of the player in it):
 | `mu.drop(what, place)` | a custom item by key, or a random item of a rarity ("epic") |
 | `mu.give(player, what)` | a custom item by key, or a random one of a rarity, into a pack (false if full) |
 | `mu.teleport(player, place)` | moves a player on this level |
+| `mu.items()` / `mu.take(place)` | the items on the floor, `{x, y, name, age}` (`age`: seconds it has lain there, town only, else 0) / the one there is gone: its name, or nil |
+| `mu.hold(tag)` | monsters with this tag get no turns of their own: they neither move nor attack |
+| `mu.walk(monster, place, steps)` | up to `steps` (1-10) squares along the shortest way there, waiting if someone is in it; where it is now, or nil if it cannot get there |
+| `mu.town_expiry(on)` | `false`: the game stops clearing items left in the town for 30 minutes (a script does it instead); back on at `/reload` |
 | `mu.glow(place, tier)` | the loot glow animation |
 | `mu.players()` / `mu.player(name)` | players on this level / anyone online |
 | `mu.random(n)`, `mu.now()`, `mu.depth()` | 1..n; the time in seconds; this level |

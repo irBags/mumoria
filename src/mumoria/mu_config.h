@@ -14,7 +14,8 @@
 
 #define MU_LEVEL_SAVE_SECONDS 60
 #define MU_LEVEL_UNLOAD_SECONDS 600
-#define MU_LEVEL_RESET_HOURS 6
+#define MU_LEVEL_RESET_HOURS 3
+#define MU_TOWN_ITEM_MINUTES 30 // an item left on the town's floor is gone after this
 
 #define MU_PARTY_MAX 5
 #define MU_CHAT_MAX_LEN 200

@@ -368,9 +368,76 @@ static MuLevel *level_from_blob(const void *data, int len) {
     return L;
 }
 
+// --- town litter -------------------------------------------------------------
+
+bool mu_town_expiry = true;
+static std::map<int32_t, int64_t> litter; // town square (y * MAX_WIDTH + x) -> when its item was first seen
+
+static bool pickable(int treasure_id) {
+    return treasure_id != 0 && game.treasure.list[treasure_id].category_id <= TV_MAX_PICK_UP;
+}
+
+static void store_litter() {
+    std::vector<int64_t> rows;
+    for (auto const &e : litter) {
+        rows.push_back(e.first);
+        rows.push_back(e.second);
+    }
+    mu_db_run("INSERT INTO world (key, blob) VALUES ('town_litter', ?) ON CONFLICT(key) DO UPDATE SET blob = excluded.blob", "b", rows.data(),
+              (int) (rows.size() * sizeof(int64_t)));
+}
+
+static void load_litter() {
+    litter.clear();
+    MuRows *r = mu_db_query("SELECT blob FROM world WHERE key = 'town_litter'", "");
+    if (mu_db_next(r)) {
+        int len = 0;
+        auto const *rows = (const int64_t *) mu_db_col_blob(r, 0, &len);
+        for (int i = 0; rows != nullptr && i + 1 < len / (int) sizeof(int64_t); i += 2) {
+            litter[(int32_t) rows[i]] = rows[i + 1];
+        }
+    }
+    mu_db_done(r);
+}
+
+void mu_town_litter() {
+    static time_t last = 0;
+    time_t now = time(nullptr);
+    if (loaded_level == nullptr || loaded_level->depth != 0 || loaded_level->raid != nullptr || now == last) {
+        return;
+    }
+    last = now;
+    for (int y = 0; y < dg.height; y++) {
+        for (int x = 0; x < dg.width; x++) {
+            int32_t square = y * MAX_WIDTH + x;
+            if (!pickable(dg.floor[y][x].treasure_id)) {
+                litter.erase(square);
+                continue;
+            }
+            auto it = litter.find(square);
+            if (it == litter.end()) {
+                litter[square] = now;
+            } else if (mu_town_expiry && now - it->second >= MU_TOWN_ITEM_MINUTES * 60) {
+                (void) dungeonDeleteObject(Coord_t{y, x});
+                dungeonLiteSpot(Coord_t{y, x});
+                litter.erase(it);
+                loaded_level->dirty = true;
+            }
+        }
+    }
+}
+
+int mu_town_item_age(Coord_t const &coord) {
+    auto it = litter.find(coord.y * MAX_WIDTH + coord.x);
+    return dg.current_level != 0 || it == litter.end() ? -1 : (int) (time(nullptr) - it->second);
+}
+
 static void store_level(MuLevel *L) {
     if (L == loaded_level) {
         save_level(L);
+    }
+    if (L->depth == 0 && L->raid == nullptr) {
+        store_litter();
     }
     std::vector<uint8_t> blob = level_blob(L);
     time_t now = time(nullptr);
@@ -798,6 +865,7 @@ void mu_world_init() {
     }
     mu_db_done(r);
     mu_shops_take_catalog();
+    load_litter();
 }
 
 void mu_world_shutdown() {

@@ -187,7 +187,11 @@ steps, and what stays compatible.
   saved every `MU_LEVEL_SAVE_SECONDS` while occupied and when the last player
   leaves. A level left empty for `MU_LEVEL_RESET_HOURS` is generated anew,
   which repopulates the dungeon. The town is one shared level, made from the
-  world's `town_seed`.
+  world's `town_seed`. An item left on the town's floor goes after
+  `MU_TOWN_ITEM_MINUTES` (30): `mu_town_litter` notes when each square's item
+  was first seen (kept in `world` as `town_litter`) and runs once a second on
+  a town turn. A script can take that over (`mu.town_expiry(false)`, as
+  `scripts/examples/garbage_man.lua` does).
 * **Compatibility:** Umoria's level generator is used as is.
 
 ### 2.4 Accounts and authentication
