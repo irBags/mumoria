@@ -86,7 +86,15 @@ static bool may_chat(MuSession *s) {
     return true;
 }
 
+// Whoever can see the speaker sees a bubble over them (s loaded, lock held).
+static void bubble(MuSession *s) {
+    if (s->in_game && s->level != nullptr && !s->in_building && mu_player_loaded() == s) {
+        muFxChat(py.pos);
+    }
+}
+
 static void to_level(MuSession *s, const std::string &text) {
+    bubble(s);
     std::string line = s->char_name + " says: " + text;
     for (MuSession *p : s->level->players) {
         say(p, line);
@@ -94,6 +102,7 @@ static void to_level(MuSession *s, const std::string &text) {
 }
 
 static void to_world(MuSession *s, const std::string &text) {
+    bubble(s);
     std::string line = "[World] " + s->char_name + ": " + text;
     mu_system_all(line);
     mu_irc_say(s->char_name.c_str(), text.c_str());
@@ -108,6 +117,7 @@ static void to_party(MuSession *s, const std::string &text) {
         say(s, "You are not in a party.");
         return;
     }
+    bubble(s);
     for (MuSession *p : s->party->members) {
         say(p, "[Party] " + s->char_name + ": " + text);
     }
@@ -128,6 +138,7 @@ static void to_guild(MuSession *s, const std::string &text) {
         say(s, "You are not in a guild.");
         return;
     }
+    bubble(s);
     to_guild_members(s->guild_id, "[Guild] " + s->char_name + ": " + text);
 }
 
@@ -137,6 +148,7 @@ static void tell(MuSession *s, const std::string &who, const std::string &text) 
         say(s, who + " is not in the game.");
         return;
     }
+    bubble(s);
     say(t, "[From " + s->char_name + "] " + text);
     say(s, "[To " + t->char_name + "] " + text);
     t->reply_to = s->char_name;

@@ -99,6 +99,8 @@ void muFxSwing(Coord_t from, Coord_t target, int weapon, int outcome, bool criti
 // (the turn's end) if no animation comes.
 void muFxDamage(Coord_t at, int amount, bool taken);
 void muFxDamageShow();
+// A chat bubble over the player at `at` who just spoke.
+void muFxChat(Coord_t at);
 // A sound from square at, for everyone near enough to hear it (fx.cpp);
 // the animations above make their own. Names: client/sounds/README.md.
 void muSound(Coord_t at, const char *name);

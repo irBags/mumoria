@@ -41,6 +41,8 @@ const int THROW_MS = 30;     // a thrown thing, per square
 const int FRAME_MS = 80;     // a burst's frame
 const int BLOW_MS = 50;      // a swing's frame
 const int BACKLOG_MS = 1500; // never queued further ahead than this
+const int CHAT_POP_MS = 90;  // a chat bubble's first dot
+const int CHAT_MS = 1500;    // then the bubble
 
 const Coord_t RING[8] = {{-1, 0}, {-1, 1}, {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}};
 
@@ -124,13 +126,14 @@ char radial(Coord_t d) {
 
 class Anim {
   public:
-    Anim() {
+    // queued false: starts now and holds up none of this player's later animations
+    explicit Anim(bool queued = true) : queued_(queued) {
         int64_t now = mu_vt_now_ms();
-        start_ = cursor > now ? cursor : now;
+        start_ = cursor > now && queued ? cursor : now;
         if (start_ > now + BACKLOG_MS) {
             start_ = now + BACKLOG_MS;
         }
-        if (together > 0) {
+        if (together > 0 && queued) {
             if (together_start < 0) {
                 together_start = start_;
             }
@@ -197,7 +200,9 @@ class Anim {
             return;
         }
         int64_t end = start_ + length_;
-        if (together > 0) {
+        if (!queued_) {
+            // its own time: the cursor stays
+        } else if (together > 0) {
             together_end = end > together_end ? end : together_end;
         } else {
             cursor = end;
@@ -255,6 +260,7 @@ class Anim {
 
     std::vector<Sound> sounds_;
     std::vector<MuFxCell> cells_;
+    bool queued_;
     int64_t start_;
     int length_ = 0;
     int impact_ = -1;
@@ -705,6 +711,30 @@ void muFxSwing(Coord_t from, Coord_t target, int weapon, int outcome, bool criti
     if (outcome == MU_FX_KILL) {
         splat(a, t, target);
         a.sound(t, target, "kill");
+    }
+    a.play();
+}
+
+// A speech bubble, "...", pops up over the speaker (under them if someone is
+// in the way above) for a moment.
+void muFxChat(Coord_t at) {
+    auto clear_row = [](Coord_t c) {
+        for (int x = c.x - 1; x <= c.x + 1; x++) {
+            Coord_t s{c.y, x};
+            if (!on_level(s) || dg.floor[s.y][s.x].creature_id != 0 || muOtherPlayerAt(s)) {
+                return false;
+            }
+        }
+        return true;
+    };
+    Coord_t row{at.y - 1, at.x};
+    if (!clear_row(row) && clear_row(Coord_t{at.y + 1, at.x})) {
+        row.y = at.y + 1;
+    }
+    Anim a(false);
+    a.put(0, CHAT_POP_MS, row, '.', fg(250));
+    for (int i = -1; i <= 1; i++) {
+        a.put(CHAT_POP_MS, CHAT_MS, Coord_t{row.y, row.x + i}, '.', on(255, 16));
     }
     a.play();
 }

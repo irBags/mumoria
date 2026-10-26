@@ -475,6 +475,10 @@ steps, and what stays compatible.
   the blow or the bolt, so a number waits (`muFxDamage`) and shows at that
   animation's moment of impact (`Anim::impact`); any left show when the turn
   ends (`muFxDamageShow`). Others nearby see only the animation.
+* **Chat bubbles:** any chat line (say, party, guild, world, tell) pops a
+  white `...` bubble over the speaker's `@` for 1.5 s (`muFxChat`, called
+  from `social.cpp`), below them if someone stands in the row above. It is
+  not queued behind their other animations and holds none of them up.
 
 ### 2.19 The town's stores, shared
 
