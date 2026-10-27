@@ -1170,7 +1170,7 @@ static void playerAttackMonster(Coord_t coord) {
         if (!playerTestBeingHit(base_to_hit, (int) py.misc.level, total_to_hit, (int) creature.ac, PlayerClassLevelAdj::BTH)) {
             (void) snprintf(msg, MORIA_MESSAGE_SIZE, "You miss %s.", name);
             printMessage(msg);
-            MU_ONLY(muFxSwing(py.pos, coord, item.category_id, MU_FX_MISS, false);)
+            MU_ONLY(muFxSwing(py.pos, coord, item.category_id, item.id, MU_FX_MISS, false);)
             continue;
         }
 
@@ -1220,7 +1220,7 @@ static void playerAttackMonster(Coord_t coord) {
 
         // See if we done it in.
         bool slain = monsterTakeHit(creature_id, damage) >= 0;
-        MU_ONLY(muFxSwing(py.pos, coord, item.category_id, slain ? MU_FX_KILL : MU_FX_HIT, fx_critical);)
+        MU_ONLY(muFxSwing(py.pos, coord, item.category_id, item.id, slain ? MU_FX_KILL : MU_FX_HIT, fx_critical);)
         if (slain) {
             (void) snprintf(msg, MORIA_MESSAGE_SIZE, "You have slain %s.", name);
             printMessage(msg);
@@ -1484,7 +1484,7 @@ int muPlayerMeleeDamage(int target_ac, const char *target_name, Coord_t target) 
         if (!playerTestBeingHit(base_to_hit, (int) py.misc.level, total_to_hit, target_ac, PlayerClassLevelAdj::BTH)) {
             (void) snprintf(msg, MORIA_MESSAGE_SIZE, "You miss %s.", target_name);
             printMessage(msg);
-            muFxSwing(py.pos, target, item.category_id, MU_FX_MISS, false);
+            muFxSwing(py.pos, target, item.category_id, item.id, MU_FX_MISS, false);
             continue;
         }
         (void) snprintf(msg, MORIA_MESSAGE_SIZE, "You hit %s.", target_name);
@@ -1498,7 +1498,7 @@ int muPlayerMeleeDamage(int target_ac, const char *target_name, Coord_t target) 
             damage = plain = diceRoll(Dice_t{1, 1});
             damage = playerWeaponCriticalBlow(1, 0, damage, PlayerClassLevelAdj::BTH);
         }
-        muFxSwing(py.pos, target, item.category_id, MU_FX_HIT, damage > plain);
+        muFxSwing(py.pos, target, item.category_id, item.id, MU_FX_HIT, damage > plain);
         damage += py.misc.plusses_to_damage;
         total += damage > 0 ? damage : 0;
     }

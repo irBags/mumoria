@@ -1004,6 +1004,16 @@ const char *muOtherPlayerNameAt(Coord_t const &coord) {
     return p != nullptr ? p->char_name.c_str() : nullptr;
 }
 
+const char *muOtherPlayerVoiceAt(Coord_t const &coord, bool &male, int &race) {
+    MuSession *p = mu_player_at(coord);
+    if (p == nullptr) {
+        return nullptr;
+    }
+    male = p->ctx.py.misc.gender;
+    race = p->ctx.py.misc.race_id;
+    return p->char_name.c_str();
+}
+
 const char *muPlayerInTheWay(Coord_t const &coord) {
     if (loaded_level == nullptr) {
         return nullptr;

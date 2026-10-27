@@ -282,6 +282,22 @@ void playerThrowItem() {
     // arrows and bolts fly point first (glyph 0); a flask of oil bursts in flame
 #ifdef MUMORIA
     bool shaft = thrown_item.category_id == TV_ARROW || thrown_item.category_id == TV_BOLT;
-    muFxRay(py.pos, dir, coord, thrown_item.category_id == TV_FLASK ? MU_FX_FIRE : MU_FX_PHYSICAL, fx_end, shaft ? 0 : tile_char);
+    // the sounds: the launcher it was fired from (weaponMissileFacts' pairs), and what it is
+    Inventory_t const &launcher = py.inventory[PlayerEquipment::Wield];
+    int kind = launcher.category_id == TV_BOW ? launcher.misc_use : 0; // 1 sling, 2-4 bows, 5-6 crossbows
+    const char *shoot = "throw";
+    if (kind == 1 && thrown_item.category_id == TV_SLING_AMMO) {
+        shoot = "sling_shoot";
+    } else if (kind >= 2 && kind <= 4 && thrown_item.category_id == TV_ARROW) {
+        shoot = "bow_shoot";
+    } else if (kind >= 5 && kind <= 6 && thrown_item.category_id == TV_BOLT) {
+        shoot = "crossbow_shoot";
+    }
+    const char *missile = thrown_item.category_id == TV_ARROW       ? "arrow"
+                          : thrown_item.category_id == TV_BOLT      ? "bolt"
+                          : thrown_item.category_id == TV_SLING_AMMO ? "stone"
+                                                                     : "thrown";
+    muFxRay(py.pos, dir, coord, thrown_item.category_id == TV_FLASK ? MU_FX_FIRE : MU_FX_PHYSICAL, fx_end, shaft ? 0 : tile_char, shoot,
+            missile);
 #endif
 }

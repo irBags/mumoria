@@ -21,6 +21,8 @@ bool muOtherPlayerAt(Coord_t const &coord);
 // "@" in its colours, an item in its rarity's; 0 for plain.
 uint32_t muTileAttr(Coord_t const &coord, char ch);
 const char *muOtherPlayerNameAt(Coord_t const &coord);
+// Another player at coord: their name, and male and race for their voice; null if none.
+const char *muOtherPlayerVoiceAt(Coord_t const &coord, bool &male, int &race);
 // Moving onto coord: the name of a player there who is not in the mover's
 // party (they block it); null if the way is clear (party members walk through).
 const char *muPlayerInTheWay(Coord_t const &coord);
@@ -84,15 +86,19 @@ enum MuFxEnd { MU_FX_NONE, MU_FX_HIT, MU_FX_KILL, MU_FX_AFFECT, MU_FX_RESIST, MU
 void muFxCast(Coord_t at, int element);
 void muFxHeal(Coord_t at);
 // From `from` in `direction` up to `end`. glyph 0: the element's own (an arrow's: its point).
-void muFxRay(Coord_t from, int direction, Coord_t end, int element, int outcome, char glyph = 0);
+// A missile's sounds: shoot as it goes ("bow_shoot", "throw"), and what it
+// is ("arrow": arrow_hit, arrow_miss) as it lands.
+void muFxRay(Coord_t from, int direction, Coord_t end, int element, int outcome, char glyph = 0, const char *shoot = nullptr,
+             const char *missile = nullptr);
 void muFxBall(Coord_t from, int direction, Coord_t center, int element);
 void muFxBreath(Coord_t from, Coord_t center, int element);
 // A monster's spell, square to square: MU_FX_HIT, MU_FX_AFFECT or MU_FX_RESIST.
 void muFxBolt(Coord_t from, Coord_t to, int element, int outcome);
 // A monster's blow (monster_attacks description id). seen: the monster is lit.
 void muFxMonsterBlow(Coord_t from, Coord_t target, int description, bool hit, bool seen);
-// One melee blow; weapon is the wielded item's category (TV_*).
-void muFxSwing(Coord_t from, Coord_t target, int weapon, int outcome, bool critical);
+// One melee blow; weapon is the wielded item's category (TV_*), object_id
+// its game_objects[] entry (the sound is by kind: a sword's, an axe's).
+void muFxSwing(Coord_t from, Coord_t target, int weapon, int object_id, int outcome, bool critical);
 // Damage as a number over the map, for the player whose fight it is: green
 // over what they hit (taken false), red over their own @ (taken true). It
 // shows at the next animation's moment of impact, or by muFxDamageShow()
@@ -104,6 +110,11 @@ void muFxChat(Coord_t at);
 // A sound from square at, for everyone near enough to hear it (fx.cpp);
 // the animations above make their own. Names: client/sounds/README.md.
 void muSound(Coord_t at, const char *name);
+// The cry of whoever is at `at` (a monster's own, a player's man's or
+// woman's): "attack", "hurt", "crit", "die" or "roar".
+void muVoice(Coord_t at, const char *event);
+// A monster died at `at` (muMonsterDies): its death cry comes with the blow after.
+void muFxDeath(Coord_t at, int creature_id);
 // While one is alive, animations play at the same time (Starlite's eight beams).
 struct MuFxTogether {
     MuFxTogether();

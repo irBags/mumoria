@@ -2,7 +2,10 @@
 //
 // Sounds are played by a command, one process a sound: $MUMORIA_PLAYER, else
 // paplay (Linux, WSL) or afplay (macOS). In the command %f is the file, %v
-// the volume 0-100, %p it for paplay (0-65536) and %a for afplay (0.00-1.00).
+// the volume 0-100, %p it for paplay (0-65536), %a for afplay (0.00-1.00)
+// and %r the rate to play it at for its pitch (the file's own at 100%).
+// paplay takes a file's rate from the file, so a pitched sound goes to it
+// as raw samples at the new rate instead; afplay plays every pitch as recorded.
 
 #include "client.h"
 
@@ -273,6 +276,11 @@ static void start_keepalive(void) {
 #endif
 }
 
+// The sounds there are (their names, without .wav), read at the start.
+#define KNOWN 512
+static char known[KNOWN][32];
+static int known_n = 0;
+
 // Reads each sound once, so its first play is not slowed by the disk
 // (under WSL, /mnt/c is slow the first time). Returns how many there are.
 static int warm_sounds(void) {
@@ -295,6 +303,9 @@ static int warm_sounds(void) {
             }
             close(fd);
             count++;
+            if (known_n < KNOWN && n - 4 < sizeof(known[0])) {
+                snprintf(known[known_n++], sizeof(known[0]), "%.*s", (int) (n - 4), e->d_name);
+            }
         }
     }
     closedir(d);
@@ -302,6 +313,7 @@ static int warm_sounds(void) {
 }
 
 void plat_sound_start(void) {
+    srand((unsigned) getpid()); // which of a sound's variants plays
     const char *env = getenv("MUMORIA_SOUNDS");
     snprintf(sound_dir, sizeof(sound_dir), "%s", env != NULL && *env != '\0' ? env : client_dir);
     if (env == NULL || *env == '\0') {
@@ -334,16 +346,64 @@ void plat_sound_start(void) {
     start_keepalive();
 }
 
-void plat_sound_play(const char *name, int volume) {
-    char file[1300];
-    snprintf(file, sizeof(file), "%s/%s.wav", sound_dir, name);
-    struct stat st;
-    if (stat(file, &st) != 0) {
-        return;
+// A 16-bit PCM WAV's rate, channels and where its samples start; 0 if it is not one.
+static int wav_facts(const char *file, int *rate, int *channels, long *data) {
+    unsigned char h[512];
+    int fd = open(file, O_RDONLY);
+    if (fd < 0) {
+        return 0;
     }
+    long n = (long) read(fd, h, sizeof(h));
+    close(fd);
+    if (n < 44 || memcmp(h, "RIFF", 4) != 0 || memcmp(h + 8, "WAVE", 4) != 0) {
+        return 0;
+    }
+    int bits = 0;
+    *rate = 0;
+    for (long at = 12; at + 8 <= n;) {
+        long len = (long) (h[at + 4] | h[at + 5] << 8 | h[at + 6] << 16 | (unsigned long) h[at + 7] << 24);
+        if (memcmp(h + at, "fmt ", 4) == 0 && at + 24 <= n) {
+            *channels = h[at + 10] | h[at + 11] << 8;
+            *rate = h[at + 12] | h[at + 13] << 8 | h[at + 14] << 16;
+            bits = h[at + 22] | h[at + 23] << 8;
+        } else if (memcmp(h + at, "data", 4) == 0) {
+            *data = at + 8;
+            return bits == 16 && *rate > 0;
+        }
+        at += 8 + len + (len & 1);
+    }
+    return 0;
+}
+
+int plat_sound_play(const char *name, int volume, int pitch) {
+    const char *pick = NULL;
+    int found = 0;
+    size_t len = strlen(name);
+    for (int i = 0; i < known_n; i++) { // name.wav, name2.wav ... name9.wav, each as likely
+        const char *k = known[i];
+        int variant = strncmp(k, name, len) == 0 && (k[len] == '\0' || (k[len] >= '2' && k[len] <= '9' && k[len + 1] == '\0'));
+        if (variant && rand() % ++found == 0) {
+            pick = k;
+        }
+    }
+    if (pick == NULL) {
+        return 0;
+    }
+    char file[1300];
+    snprintf(file, sizeof(file), "%s/%s.wav", sound_dir, pick);
+    int rate = 22050, channels = 1;
+    long data = 44;
+    int wav = wav_facts(file, &rate, &channels, &data);
+    int play_rate = rate * pitch / 100;
     char cmd[2048];
     int m = 0;
-    for (const char *p = player_cmd; *p != '\0' && m < (int) sizeof(cmd) - 1400; p++) {
+    const char *how = player_cmd;
+    char raw[256];
+    if (pitch != 100 && wav && strcmp(player_cmd, "paplay --volume=%p %f") == 0) {
+        snprintf(raw, sizeof(raw), "tail -c +%ld %%f | paplay --raw --format=s16le --channels=%d --rate=%%r --volume=%%p", data + 1, channels);
+        how = raw;
+    }
+    for (const char *p = how; *p != '\0' && m < (int) sizeof(cmd) - 1400; p++) {
         if (*p != '%' || p[1] == '\0') {
             cmd[m++] = *p;
             continue;
@@ -354,6 +414,7 @@ void plat_sound_play(const char *name, int volume) {
             case 'v': m += snprintf(cmd + m, sizeof(cmd) - (size_t) m, "%d", volume); break;
             case 'p': m += snprintf(cmd + m, sizeof(cmd) - (size_t) m, "%d", volume * 65536 / 100); break;
             case 'a': m += snprintf(cmd + m, sizeof(cmd) - (size_t) m, "%d.%02d", volume / 100, volume % 100); break;
+            case 'r': m += snprintf(cmd + m, sizeof(cmd) - (size_t) m, "%d", play_rate); break;
             default: cmd[m++] = *p; break;
         }
     }
@@ -369,6 +430,7 @@ void plat_sound_play(const char *name, int volume) {
         execl("/bin/sh", "sh", "-c", cmd, (char *) NULL);
         _exit(127);
     }
+    return 1;
 }
 
 // --- crashes ---------------------------------------------------------------------

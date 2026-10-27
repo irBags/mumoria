@@ -173,6 +173,7 @@ static void boss_dies(int monster_id) {
 void muMonsterDies(int monster_id, int treasure_before) {
     Monster_t &m = monsters[monster_id];
     Coord_t center{m.pos.y, m.pos.x};
+    muFxDeath(center, m.creature_id);
     bool lord = m.mu_boss == 3;
     static const int SOURCE[] = {MU_LOOT_MONSTER, MU_LOOT_BOSS, MU_LOOT_CAPTAIN, MU_LOOT_LORD};
     int source = m.mu_boss == 0 && mu_script_is_boss(m.mu_script) ? MU_LOOT_BOSS : SOURCE[m.mu_boss <= 3 ? m.mu_boss : 0];

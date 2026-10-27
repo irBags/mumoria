@@ -59,16 +59,18 @@ typedef struct {
 } MuFxCell;
 
 // A sound for the client to play at t (fx.cpp queues them with the
-// animations). It goes as telnet IAC SB MU_TELOPT_SOUND "name volume" IAC SE,
-// only to a client that answered the server's DO with WILL (net.c), so a
-// plain telnet never sees it. Volume is 1-100.
+// animations). It goes as telnet IAC SB MU_TELOPT_SOUND "name volume pitch"
+// IAC SE, only to a client that answered the server's DO with WILL (net.c),
+// so a plain telnet never sees it. Volume is 1-100; pitch is a percentage
+// of the file's own (50-200, 100 as recorded), a creature's or a player's voice.
 #define MU_TELOPT_SOUND 212
-#define MU_SOUND_MAX 64
+#define MU_SOUND_MAX 128
 #define MU_SOUND_NAME 16
 typedef struct {
     int64_t t;
     char name[MU_SOUND_NAME];
     int volume;
+    int pitch;
 } MuSound;
 
 typedef struct MuScreen {
@@ -152,7 +154,7 @@ void mu_vt_map_panel(MuScreen *s, int top, int bottom, int left, int right, int 
 void mu_vt_fx_add(MuScreen *s, const MuFxCell *cells, int n);
 void mu_vt_fx_clear(MuScreen *s);
 // A sound at t (mu_vt_now_ms); nothing unless the client plays sounds.
-void mu_vt_sound(MuScreen *s, int64_t t, const char *name, int volume);
+void mu_vt_sound(MuScreen *s, int64_t t, const char *name, int volume, int pitch);
 // Draws the frame due now and sends the sounds due; returns the ms until the
 // next change, -1 if none.
 int mu_vt_fx_tick(MuScreen *s);

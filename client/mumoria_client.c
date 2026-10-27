@@ -8,7 +8,7 @@
 //
 //     mumoria-client [-q] [host] [port]
 //
-// Sounds: the server sends IAC SB 212 "name volume" IAC SE (src/mumoria/vterm.h)
+// Sounds: the server sends IAC SB 212 "name volume [pitch]" IAC SE (src/mumoria/vterm.h)
 // once this client has answered its DO 212 with WILL; -q, or MUMORIA_SOUND=off,
 // answers WONT. Each is sounds/<name>.wav beside this program; how a platform
 // plays them is in its own file (client_posix.c, client_win.c). A missing
@@ -100,7 +100,9 @@ static long long now_ms(void) {
     return (long long) ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
-// "name volume". The name comes from the server: only [a-z0-9_] is taken.
+// "name volume [pitch]". The name comes from the server: only [a-z0-9_] is
+// taken. A name with no file of its own falls back on its last part:
+// orc_hurt, then hurt (so a new creature's sounds need not all be there).
 static void sound_message(const unsigned char *sb, int len) {
     static char last[32];
     static long long last_at;
@@ -112,11 +114,16 @@ static void sound_message(const unsigned char *sb, int len) {
     memcpy(text, sb + 1, (size_t) n);
     text[n] = '\0';
     char *space = strchr(text, ' ');
-    int volume = 100;
+    int volume = 100, pitch = 100;
     if (space != NULL) {
         *space = '\0';
         volume = atoi(space + 1);
+        char *second = strchr(space + 1, ' ');
+        if (second != NULL) {
+            pitch = atoi(second + 1);
+        }
     }
+    pitch = pitch < 50 ? 50 : pitch > 200 ? 200 : pitch;
     if (text[0] == '\0' || strlen(text) >= sizeof(last)) {
         return;
     }
@@ -131,7 +138,13 @@ static void sound_message(const unsigned char *sb, int len) {
     }
     snprintf(last, sizeof(last), "%.31s", text); // shorter than last: checked above
     last_at = t;
-    plat_sound_play(text, volume < 1 ? 1 : volume > 100 ? 100 : volume);
+    volume = volume < 1 ? 1 : volume > 100 ? 100 : volume;
+    for (const char *name = text; !plat_sound_play(name, volume, pitch);) {
+        name = strchr(name, '_');
+        if (name == NULL || *++name == '\0') {
+            break; // none at all: silence
+        }
+    }
 }
 
 void client_feed(const unsigned char *buf, int n) {

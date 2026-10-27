@@ -307,7 +307,7 @@ const char *plat_run(int *failed) {
 #define FRAMES 512 // a buffer: 23 ms
 #define NBUF 4
 #define VOICES 16
-#define CLIPS 64
+#define CLIPS 512
 
 typedef struct {
     char name[32];
@@ -315,9 +315,11 @@ typedef struct {
     int len;
 } Clip;
 
+// pos and step in 1/65536ths of a frame: a step over 65536 plays it higher.
 typedef struct {
     const short *pcm;
-    int len, pos, gain; // gain 0-256
+    long long len, pos;
+    int step, gain; // gain 0-256
 } Voice;
 
 static char sound_dir[1100];
@@ -441,7 +443,8 @@ static void fill(WAVEHDR *h) {
                 s->pcm = NULL; // done
                 break;
             }
-            acc[i] += s->pcm[s->pos++] * s->gain / 256;
+            acc[i] += s->pcm[s->pos >> 16] * s->gain / 256;
+            s->pos += s->step;
         }
     }
     LeaveCriticalSection(&mix_lock);
@@ -466,6 +469,7 @@ static DWORD WINAPI mixer(LPVOID arg) {
 }
 
 void plat_sound_start(void) {
+    srand((unsigned) GetTickCount()); // which of a sound's variants plays
     const char *env = getenv("MUMORIA_SOUNDS");
     if (env != NULL && *env != '\0') {
         snprintf(sound_dir, sizeof(sound_dir), "%s", env);
@@ -509,15 +513,19 @@ void plat_sound_start(void) {
     }
 }
 
-void plat_sound_play(const char *name, int volume) {
+int plat_sound_play(const char *name, int volume, int pitch) {
     Clip *c = NULL;
-    for (int i = 0; i < clip_n && c == NULL; i++) {
-        if (strcmp(clips[i].name, name) == 0) {
-            c = &clips[i];
+    int found = 0;
+    size_t n = strlen(name);
+    for (int i = 0; i < clip_n; i++) {
+        const char *k = clips[i].name;
+        int variant = strncmp(k, name, n) == 0 && (k[n] == '\0' || (k[n] >= '2' && k[n] <= '9' && k[n + 1] == '\0'));
+        if (variant && rand() % ++found == 0) {
+            c = &clips[i]; // each of them as likely
         }
     }
     if (c == NULL) {
-        return; // a missing sound is silence
+        return 0;
     }
     EnterCriticalSection(&mix_lock);
     int slot = 0;
@@ -530,8 +538,9 @@ void plat_sound_play(const char *name, int volume) {
             slot = v; // all busy: the one furthest on gives way
         }
     }
-    voices[slot] = (Voice){c->pcm, c->len, 0, volume * 256 / 100};
+    voices[slot] = (Voice){c->pcm, (long long) c->len << 16, 0, pitch * 65536 / 100, volume * 256 / 100};
     LeaveCriticalSection(&mix_lock);
+    return 1;
 }
 
 // --- crashes ---------------------------------------------------------------------

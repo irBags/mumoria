@@ -132,7 +132,7 @@ void endGame() {
     }
     // the death cry as it happens, not after the tomb's key (session.cpp muEndGame)
     if (!game.total_winner) {
-        muSound(py.pos, "die");
+        muVoice(py.pos, "die"); // a man's or a woman's
     }
 #endif
     printMessage(CNIL);

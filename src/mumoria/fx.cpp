@@ -7,7 +7,9 @@
 
 #include "session.h"
 
+#include <algorithm>
 #include <cmath>
+#include <cstring>
 
 namespace {
 
@@ -43,6 +45,7 @@ const int BLOW_MS = 50;      // a swing's frame
 const int BACKLOG_MS = 1500; // never queued further ahead than this
 const int CHAT_POP_MS = 90;  // a chat bubble's first dot
 const int CHAT_MS = 1500;    // then the bubble
+const int VOICE_GAP_MS = 700; // one cry from a square at most this often
 
 const Coord_t RING[8] = {{-1, 0}, {-1, 1}, {0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}};
 
@@ -124,6 +127,136 @@ char radial(Coord_t d) {
     return d.y == d.x ? '\\' : '/';
 }
 
+// --- voices: whose cries a sound is (client/sounds/README.md) ---------------------
+
+// A creature's or a player's voice: the family of sound files it uses
+// ("orc": orc_attack, orc_hurt, orc_crit, orc_die) and its pitch, a
+// percentage, so two orcs of a family still sound apart.
+struct Voice {
+    const char *kind = nullptr;
+    int pitch = 100;
+};
+
+bool named(const char *name, const char *part) {
+    return std::strstr(name, part) != nullptr;
+}
+
+// By the creature's letter, then a few by name. Bigger and deeper with its
+// level, and each creature a little apart from the rest of its family.
+Voice creature_voice(int creature_id) {
+    Creature_t const &c = creatures_list[creature_id];
+    const char *name = c.name;
+    const char *kind;
+    switch (c.sprite) {
+        case 'p': kind = "human"; break;
+        case 'k': case 'y': case 'H': kind = "goblin"; break;
+        case 'o': kind = named(name, "Ogre") ? "ogre" : "orc"; break;
+        case 'T': kind = "troll"; break;
+        case 'P': kind = "giant"; break;
+        case 'Y': case 'U': kind = "ogre"; break;
+        case 'd': case 'D': kind = "dragon"; break;
+        case 'z': case 'M': kind = "zombie"; break;
+        case 's': kind = "skeleton"; break;
+        case 'G': case 'W': case 'L': kind = "ghost"; break;
+        case 'V': kind = "vampire"; break;
+        case 'a': case 'K': case 'c': case 't': case 'l': case 'F': case 'A': case 'S': kind = "insect"; break;
+        case 'b': kind = "bat"; break;
+        case 'r': kind = "rodent"; break;
+        case 'R': case 'n': kind = "snake"; break;
+        case 'j': kind = "canine"; break;
+        case 'J': case 'O': case 'i': case 'w': case 'C': case 'm': case ',': kind = "slime"; break;
+        case 'e': kind = "eye"; break;
+        case 'f': kind = "frog"; break;
+        case 'g': case 'X': kind = "golem"; break;
+        case 'E': kind = "spirit"; break;
+        case 'q': case 'B': case 'Q': case '&': kind = "demon"; break;
+        case 'h': kind = "harpy"; break;
+        case '$': kind = "coins"; break;
+        default: kind = "beast"; break;
+    }
+    int pitch = 115 - std::min((int) c.level, 60) / 2 + (creature_id * 37 % 9 - 4) * 2;
+    if (named(name, "Hobbit") || named(name, "Gnome") || named(name, "Little") || named(name, "Urchin") || named(name, "Mouse")) {
+        pitch += 15;
+    }
+    if (named(name, "Giant") || named(name, "Huge") || named(name, "Ancient") || named(name, "King") || named(name, "Emperor") ||
+        named(name, "Master") || named(name, "Two-Headed")) {
+        pitch -= 8;
+    }
+    return Voice{kind, std::max(75, std::min(135, pitch))};
+}
+
+// Deeper for a man, higher for a woman (their own files), and by race; a
+// little apart for each name.
+Voice player_voice(bool male, int race, const char *name) {
+    static const int RACE[] = {100, 102, 105, 112, 110, 93, 95, 88}; // Human, Half-Elf, Elf, Halfling, Gnome, Dwarf, Half-Orc, Half-Troll
+    unsigned h = 0;
+    for (const char *p = name; *p != '\0'; p++) {
+        h = h * 31 + (unsigned char) *p;
+    }
+    return Voice{male ? "male" : "female", RACE[race >= 0 && race <= 7 ? race : 0] + (int) (h % 7) - 3};
+}
+
+Voice my_voice() {
+    MuSession *s = mu_self;
+    return player_voice(py.misc.gender, py.misc.race_id, s != nullptr ? s->char_name.c_str() : "");
+}
+
+// Monsters that died this turn, where: a blow or a bolt's sounds come after
+// the death (muFxDeath), and the dead still cry out.
+struct Death {
+    const void *level;
+    Coord_t at;
+    int creature_id;
+};
+Death deaths[16];
+int death_n = 0;
+
+// Whoever is on c, or died there just now: their voice; no kind if nobody.
+Voice voice_at(Coord_t c) {
+    if (c.y == py.pos.y && c.x == py.pos.x) {
+        return my_voice();
+    }
+    if (on_level(c) && dg.floor[c.y][c.x].creature_id > 1) {
+        return creature_voice(monsters[dg.floor[c.y][c.x].creature_id].creature_id);
+    }
+    bool male;
+    int race;
+    const char *name = muOtherPlayerVoiceAt(c, male, race);
+    if (name != nullptr) {
+        return player_voice(male, race, name);
+    }
+    const void *level = mu_self != nullptr ? mu_self->level : nullptr;
+    for (int i = death_n - 1; i >= 0 && i >= death_n - 16; i--) {
+        Death const &d = deaths[i % 16];
+        if (d.level == level && d.at.y == c.y && d.at.x == c.x) {
+            return creature_voice(d.creature_id);
+        }
+    }
+    return Voice{};
+}
+
+// Umoria's weapon, as its sounds: sword_swing, sword_hit, sword_crit.
+const char *weapon_sound(int category, int object_id) {
+    const char *name = object_id >= 0 && object_id < MAX_OBJECTS_IN_GAME ? game_objects[object_id].name : "";
+    switch (category) {
+        case TV_NOTHING:
+            return "fist";
+        case TV_SWORD:
+            return named(name, "Dagger") ? "dagger" : "sword";
+        case TV_HAFTED:
+            return named(name, "Cat-o") ? "whip" : "mace";
+        case TV_POLEARM:
+            if (named(name, "Axe")) {
+                return "axe";
+            }
+            return named(name, "Pike") || named(name, "Spear") || named(name, "Lance") || named(name, "Javelin") ? "spear" : "pole";
+        case TV_DIGGING:
+            return "pick";
+        default:
+            return "mace"; // a bow swung, or anything else: a thump
+    }
+}
+
 class Anim {
   public:
     // queued false: starts now and holds up none of this player's later animations
@@ -142,8 +275,32 @@ class Anim {
     }
 
     // A sound at ms `at`, from square c (vterm.h MuSound).
-    void sound(int at, Coord_t c, const char *name) {
-        sounds_.push_back(Sound{at, c, name});
+    void sound(int at, Coord_t c, std::string const &name, int pitch = 100) {
+        sounds_.push_back(Sound{at, c, name, pitch});
+    }
+
+    // A voice's cry: "attack", "hurt", "crit" or "die". The same cry from
+    // the same square is heard once in VOICE_GAP_MS (four blows, one grunt).
+    void voice(int at, Coord_t c, Voice const &v, const char *event) {
+        if (v.kind == nullptr) {
+            return;
+        }
+        std::string name = std::string(v.kind) + "_" + event;
+        static struct {
+            std::string name;
+            Coord_t at;
+            int64_t t;
+        } recent[16];
+        static int next = 0;
+        int64_t t = start_ + at;
+        for (auto const &r : recent) {
+            if (r.name == name && same(r.at, c) && t - r.t < VOICE_GAP_MS && t >= r.t) {
+                return;
+            }
+        }
+        recent[next] = {name, c, t};
+        next = (next + 1) % 16;
+        sound(at, c, name, v.pitch);
     }
 
     // When the blow lands or the bolt bursts: waiting damage numbers show then.
@@ -217,7 +374,7 @@ class Anim {
             for (Sound const &k : sounds_) {
                 int volume = loudness(me, eye, k.at_square);
                 if (volume > 0) {
-                    mu_vt_sound(mu_screen_of(p), start_ + k.at, k.name, volume);
+                    mu_vt_sound(mu_screen_of(p), start_ + k.at, k.name.c_str(), volume, k.pitch);
                 }
             }
             if ((me ? py.flags.blind : p->ctx.py.flags.blind) > 0) {
@@ -238,7 +395,8 @@ class Anim {
     struct Sound {
         int at;
         Coord_t at_square;
-        const char *name;
+        std::string name;
+        int pitch;
     };
 
     // Full beside you, fainter with distance, muffled by walls; out of
@@ -458,11 +616,15 @@ void muFxLoot(Coord_t at, int tier) {
     a.play();
 }
 
-void muFxRay(Coord_t from, int direction, Coord_t end, int element, int outcome, char glyph) {
+void muFxRay(Coord_t from, int direction, Coord_t end, int element, int outcome, char glyph, const char *shoot, const char *missile) {
     Palette const &p = pal(element);
     Coord_t d = dir_vec(direction);
     char head = glyph != 0 ? glyph : element == MU_FX_LIGHTNING || element == MU_FX_PHYSICAL ? radial(d) : p.glyph;
+    std::string what = missile != nullptr ? std::string(missile) + "_" : "";
     Anim a;
+    if (shoot != nullptr) {
+        a.sound(0, from, shoot);
+    }
     int t = flight(a, from, direction, end, p, head, element);
     a.impact(t);
     switch (outcome) {
@@ -470,10 +632,8 @@ void muFxRay(Coord_t from, int direction, Coord_t end, int element, int outcome,
         case MU_FX_KILL: {
             bool kill = outcome == MU_FX_KILL || (on_level(end) && dg.floor[end.y][end.x].creature_id == 0);
             burst(a, t, end, p, kill);
-            a.sound(t, end, "hit");
-            if (kill) {
-                a.sound(t + 3 * FRAME_MS, end, "kill");
-            }
+            a.sound(t, end, what + "hit");
+            a.voice(t + (kill ? 3 * FRAME_MS : FRAME_MS), end, voice_at(end), kill ? "die" : "hurt");
             break;
         }
         case MU_FX_AFFECT:
@@ -485,7 +645,7 @@ void muFxRay(Coord_t from, int direction, Coord_t end, int element, int outcome,
             break;
         case MU_FX_MISS:
             glance(a, t, end, d, head, p, false);
-            a.sound(t, end, "miss");
+            a.sound(t, end, what + "miss");
             break;
         case MU_FX_WALL:
             if (on_level(end) && !open(end)) {
@@ -530,7 +690,7 @@ static int aim(Anim &a, Coord_t from, Coord_t to, Palette const &p, int ms) {
 void muFxBreath(Coord_t from, Coord_t center, int element) {
     Palette const &p = pal(element);
     Anim a;
-    a.sound(0, from, "roar"); // a breath is drawn with a roar
+    a.voice(0, from, voice_at(from), "roar"); // a breath is drawn with a roar
     int t = aim(a, from, center, p, 20);
     blast(a, t, center, p);
     a.sound(t, center, "blast");
@@ -551,15 +711,42 @@ void muFxBolt(Coord_t from, Coord_t to, int element, int outcome) {
     } else {
         burst(a, t, to, p, false);
         a.sound(t, to, "hit");
+        a.voice(t + FRAME_MS, to, voice_at(to), "hurt");
     }
     a.play();
+}
+
+// The sound a monster's blow makes landing, by its description id.
+const char *blow_sound(int description) {
+    switch (description) {
+        case 2: return "blow_bite";
+        case 3: return "blow_claw";
+        case 4: return "blow_sting";
+        case 9: return "blow_spit";
+        case 15: case 18: return "blow_slime";
+        case 16: case 17: return "blow_crush";
+        case 5: case 11: case 12: case 14: case 19: return "blow_touch";
+        case 7: case 8: case 10: case 13: case 99: return nullptr; // a gaze, a breath, a wail, spores, repelled: the cry alone
+        default: return "blow_hit"; // hits, kicks
+    }
 }
 
 void muFxMonsterBlow(Coord_t from, Coord_t target, int description, bool hit, bool seen) {
     Coord_t d{sign(target.y - from.y), sign(target.x - from.x)};
     const int F = BLOW_MS;
     Anim a;
-    a.sound(0, target, hit ? "hurt" : "miss");
+    a.voice(0, from, voice_at(from), "attack");
+    if (hit) {
+        const char *landing = blow_sound(description);
+        if (landing != nullptr) {
+            a.sound(F, target, landing);
+        }
+        if (description != 99) {
+            a.voice(2 * F, target, voice_at(target), "hurt");
+        }
+    } else {
+        a.sound(0, target, "miss");
+    }
     if (!hit) {
         if (seen) {
             a.put(0, F + 30, beside(target, d), '~', fg(244)); // it misses: the air beside you
@@ -626,7 +813,7 @@ void muFxMonsterBlow(Coord_t from, Coord_t target, int description, bool hit, bo
     a.play();
 }
 
-void muFxSwing(Coord_t from, Coord_t target, int weapon, int outcome, bool critical) {
+void muFxSwing(Coord_t from, Coord_t target, int weapon, int object_id, int outcome, bool critical) {
     Coord_t d{sign(target.y - from.y), sign(target.x - from.x)};
     int i = 0;
     while (i < 8 && !same(RING[i], d)) {
@@ -642,8 +829,18 @@ void muFxSwing(Coord_t from, Coord_t target, int weapon, int outcome, bool criti
     const int F = BLOW_MS;
     const uint32_t steel = fg(255), dull = fg(246);
 
+    // the weapon's swish, then its blow; the swinger's grunt, the struck one's cry
+    std::string kind = weapon_sound(weapon, object_id);
+    Voice victim = voice_at(target);
     Anim a;
-    a.sound(F, target, !hit ? "miss" : critical ? "crit" : "hit");
+    a.sound(0, from, kind + "_swing");
+    a.voice(0, from, voice_at(from), "attack");
+    if (hit) {
+        a.sound(F, target, kind + (critical ? "_crit" : "_hit"));
+        if (outcome != MU_FX_KILL) {
+            a.voice(2 * F, target, victim, critical ? "crit" : "hurt");
+        }
+    }
     a.impact(F);
     int t = 0;
     switch (weapon_kind(weapon)) {
@@ -710,7 +907,7 @@ void muFxSwing(Coord_t from, Coord_t target, int weapon, int outcome, bool criti
     }
     if (outcome == MU_FX_KILL) {
         splat(a, t, target);
-        a.sound(t, target, "kill");
+        a.voice(t, target, victim, "die");
     }
     a.play();
 }
@@ -743,6 +940,17 @@ void muSound(Coord_t at, const char *name) {
     Anim a;
     a.sound(0, at, name);
     a.play();
+}
+
+void muVoice(Coord_t at, const char *event) {
+    Anim a;
+    a.voice(0, at, voice_at(at), event);
+    a.play();
+}
+
+void muFxDeath(Coord_t at, int creature_id) {
+    deaths[death_n % 16] = Death{mu_self != nullptr ? mu_self->level : nullptr, at, creature_id};
+    death_n++;
 }
 
 void muFxDamage(Coord_t at, int amount, bool taken) {

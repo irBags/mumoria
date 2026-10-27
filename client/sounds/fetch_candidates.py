@@ -50,6 +50,20 @@ PACKS = {
                       "https://opengameart.org/content/chunky-explosion", "Chunky Explosion"),
     "oga-roar": ("https://opengameart.org/sites/default/files/monster_roar.wav",
                  "https://opengameart.org/content/cc0-deep-monster-roar", "CC0 Deep Monster Roar"),
+    # for fetch_voices.py: creatures, men's and women's voices, weapons
+    "oga-rpgpack": ("https://opengameart.org/sites/default/files/rpg_sound_pack.zip",
+                    "https://opengameart.org/content/rpg-sound-pack", "RPG Sound Pack (artisticdude)"),
+    "oga-yelling": ("https://opengameart.org/sites/default/files/yelling%20sounds.zip",
+                    "https://opengameart.org/content/male-gruntyelling-sounds", "Male Grunt/Yelling sounds (HaelDB; CC0 of its two)"),
+    "oga-femscream": ("https://opengameart.org/sites/default/files/female_screams.zip",
+                      "https://opengameart.org/content/female-screams", "Female screams (congusbongus; files 2-4 CC0 per its license.txt)"),
+    "oga-femdying": ("https://opengameart.org/sites/default/files/Dying-Voices-FEMALE-RPG.zip",
+                     "https://opengameart.org/node/99640","Dying Voices - Female - RPG (Galacti-Chron; CC0 of its two)"),
+    "oga-battle": ("https://opengameart.org/sites/default/files/battle_sound_effects_0.zip",
+                   "https://opengameart.org/content/battle-sound-effects", "Battle Sound Effects (artisticdude; CC0 of its five)"),
+    "oga-medieval": ("https://opengameart.org/sites/default/files/medieval_sfx_textures_{1,2}_of_2.7z",
+                     "https://opengameart.org/content/medieval-sound-effects-weapon-textures",
+                     "Medieval sound effects - Weapon Textures (Ben Jaszczak & Brian Nelson)"),
 }
 
 # name: (longest seconds, [(pack, file name in it), ...]); the first is the
@@ -108,6 +122,9 @@ def unpack(cache):
                 with zipfile.ZipFile(data_path) as z:
                     z.extractall(folder)
                 os.remove(data_path)
+            elif name.endswith(".7z"):
+                subprocess.run(["7z", "x", "-y", f"-o{folder}", data_path], check=True, capture_output=True)
+                os.remove(data_path)
 
 
 def find(cache, pack, stem):
@@ -129,11 +146,14 @@ def loudness(path):
     return mean, peak
 
 
-def convert(src, dest, seconds):
-    """Leading silence off, cut and faded to `seconds`, mono 22050 Hz, then
-    louder or quieter so its peak is -1 dB and its average at most -18 dB."""
+def convert(src, dest, seconds, start=0.0, effect=""):
+    """From `start` seconds in, leading silence off, then `effect` (ffmpeg
+    filters, at 22050 Hz: a change of pitch), cut and faded to `seconds`,
+    mono 22050 Hz, then louder or quieter so its peak is -1 dB and its
+    average at most -18 dB."""
     fade = 0.15
-    shape = (f"silenceremove=start_periods=1:start_threshold=-50dB,"
+    shape = (f"atrim=start={start},asetpts=PTS-STARTPTS,aresample=22050,"
+             f"silenceremove=start_periods=1:start_threshold=-50dB,{effect + ',' if effect else ''}"
              f"atrim=0:{seconds},afade=t=out:st={max(0.0, seconds - fade)}:d={fade}")
     tmp = dest + ".tmp.wav"
     subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", src, "-af", shape,

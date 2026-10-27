@@ -45,8 +45,10 @@ void plat_restore(void);
 // the server saying goodbye.
 const char *plat_run(int *failed);
 // Sounds: get ready (sounds/ beside the program); play one by name (only
-// [a-z0-9_]), volume 1-100. A missing sound is silence.
+// [a-z0-9_]), volume 1-100, pitch a percentage (100: as recorded). Where
+// there are name2.wav ... name9.wav too, one of them at random. Returns 0
+// (and plays nothing) if there is no such sound.
 void plat_sound_start(void);
-void plat_sound_play(const char *name, int volume);
+int plat_sound_play(const char *name, int volume, int pitch);
 // A crash: the terminal put back, where it happened in the log, then gone.
 void plat_catch_crashes(void);

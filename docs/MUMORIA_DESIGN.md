@@ -674,10 +674,26 @@ steps, and what stays compatible.
   private telnet option, `MU_TELOPT_SOUND`); the client answers `WILL`
   (`-q` answers `WONT`), and only then is anything sent. A plain telnet
   never sees a sound.
-* **On the wire:** `IAC SB 212 "name volume" IAC SE`, volume 1-100. The
-  client plays `sounds/<name>.wav` beside it with `paplay` (Linux, WSL),
-  `afplay` (macOS) or `$MUMORIA_PLAYER`; a missing file is silence. The
-  names and when each plays: `client/sounds/README.md`.
+* **On the wire:** `IAC SB 212 "name volume pitch" IAC SE`, volume 1-100,
+  pitch a percentage (left out at 100; an older client reads only the
+  first two). The client plays `sounds/<name>.wav` beside it with `paplay`
+  (Linux, WSL), `afplay` (macOS) or `$MUMORIA_PLAYER`; a missing file is
+  silence. The names and when each plays: `client/sounds/README.md`.
+* **Whose sound it is:** a voice (a monster's family, by its letter, or a
+  player's `male` / `female`) and what it did: `orc_hurt`, `female_die`; a
+  weapon's kind and what it did: `axe_swing`, `bow_shoot`, `arrow_miss`
+  (`fx.cpp` `creature_voice`, `player_voice`, `weapon_sound`). The client
+  falls back on the name's last part (`orc_hurt`, else `hurt`), and picks
+  at random among `<name>.wav`, `<name>2.wav` ... `<name>9.wav`. Pitch makes
+  each creature its own: bigger and higher-level deeper, each a little
+  apart from its family; a player's by race and name. Men's recordings are
+  three semitones down and women's two up (`client/sounds/fetch_voices.py`),
+  so a man is heard deeper whatever the take.
+* **Who is crying out:** `fx.cpp` `voice_at(square)`: the player loaded,
+  a monster there, another player there, or a monster that died there this
+  turn (`muFxDeath`, from `muMonsterDies`: a blow's sounds are queued after
+  the death, so the dead are looked up). The same cry from the same square
+  is sent once in 700 ms, so four blows make one grunt.
 * **Timed with the animations:** an animation (`fx.cpp` `Anim`) carries its
   sounds, so a blow's thud comes with its frame. They go into the same
   per-screen queue (`vterm.c` `mu_vt_sound`) and the I/O thread sends each
@@ -689,7 +705,8 @@ steps, and what stays compatible.
   when their client does not play sounds).
 * **The sounds** come from CC0 packs (Kenney, OpenGameArt;
   `client/sounds/CREDITS.md`), fetched, trimmed and evened out by
-  `client/sounds/fetch_candidates.py`; `fizzle` is synthesised
+  `client/sounds/fetch_candidates.py` (the voices and weapons by
+  `fetch_voices.py`, from its table); `fizzle` is synthesised
   (`make_sounds.py`). `client/sounds/candidates/<name>/` holds 3-5 other
   choices for each, the synthesised one among them; copy one over
   `<name>.wav` to change it (the build copies them beside the client every
@@ -943,9 +960,11 @@ of the following against the built server:
 * While waiting for others in a battle round, the chat line (`'`) cannot be
   opened; the wait is at most `MU_ROUND_TIMEOUT`.
 * The extra monster spawns for several teams were not measured by a test.
-* Animations not yet seen in a test: monster breath and monster spells (no
-  caster cast within a test's lifetime), a failed spell's fizzle, axe and
-  mace blows, arrows in flight at range.
+* Voices and weapon sounds (2.24) were bot-tested for fists, a dagger, an
+  axe, a thrown torch, five monster families and both sexes; bows,
+  crossbows, slings, critical blows and player-against-player cries were
+  not, and no one has listened to the new sounds yet: they were picked by
+  their names and by measuring pitch.
 * Umoria's look command keeps a little state in statics
   (`dungeon_los.cpp`), and so does its haggling (`store.cpp`). Two players
   doing those at the same moment can disturb each other's display, but not

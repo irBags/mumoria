@@ -533,7 +533,7 @@ void mu_vt_fx_add(MuScreen *s, const MuFxCell *cells, int n) {
     wake(s);
 }
 
-void mu_vt_sound(MuScreen *s, int64_t t, const char *name, int volume) {
+void mu_vt_sound(MuScreen *s, int64_t t, const char *name, int volume, int pitch) {
     if (!s->sound) {
         return;
     }
@@ -543,6 +543,7 @@ void mu_vt_sound(MuScreen *s, int64_t t, const char *name, int volume) {
         k->t = t;
         snprintf(k->name, sizeof(k->name), "%s", name);
         k->volume = volume < 1 ? 1 : volume > 100 ? 100 : volume;
+        k->pitch = pitch < 50 ? 50 : pitch > 200 ? 200 : pitch;
     }
     pthread_mutex_unlock(&s->lock);
     wake(s);
@@ -559,8 +560,9 @@ static int64_t send_sounds(MuScreen *s, int64_t now) {
             next = next < 0 || k.t < next ? k.t : next;
             continue;
         }
-        char msg[MU_SOUND_NAME + 16];
-        int n = snprintf(msg, sizeof(msg), "\377\372%c%s %d\377\360", MU_TELOPT_SOUND, k.name, k.volume);
+        char msg[MU_SOUND_NAME + 24];
+        int n = k.pitch == 100 ? snprintf(msg, sizeof(msg), "\377\372%c%s %d\377\360", MU_TELOPT_SOUND, k.name, k.volume)
+                               : snprintf(msg, sizeof(msg), "\377\372%c%s %d %d\377\360", MU_TELOPT_SOUND, k.name, k.volume, k.pitch);
         out_append(s, msg, n);
     }
     s->sound_n = kept;

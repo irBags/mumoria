@@ -1323,7 +1323,7 @@ static void monsterAttackingUpdate(Monster_t &monster, int monster_id, int moves
 
                             // force it to be exactly zero
                             monster.sleep_count = 0;
-                            MU_ONLY(muSound(monster.pos, "roar");) // it wakes, and says so
+                            MU_ONLY(muVoice(monster.pos, "roar");) // it wakes, and says so
                         }
                     }
                 }

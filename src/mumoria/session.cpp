@@ -481,7 +481,7 @@ static void turn_label(MuSession *s) {
     }
     if (mine && !s->turn_shown) {
         if (mu_vt_current->sound) {
-            mu_vt_sound(mu_vt_current, mu_vt_now_ms(), "your_turn", 100); // to them alone
+            mu_vt_sound(mu_vt_current, mu_vt_now_ms(), "your_turn", 100, 100); // to them alone
         } else {
             muBell();
         }
