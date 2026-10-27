@@ -131,6 +131,8 @@ void muFxLoot(Coord_t at, int tier);
 // Scripts (script.cpp): a monster's name (its own, if a script gave it one);
 // a script's portal (store door 112, its key in the inscription) stepped on.
 const char *muMonsterName(Monster_t const &monster);
+// The letter it is drawn as: its tag's own (mu.letter), else its creature's.
+uint8_t muMonsterSprite(Monster_t const &monster);
 void muScriptPortal(const char *key);
 // A monster a script moves itself (mu.hold): the engine gives it no turns.
 bool muMonsterHeld(Monster_t const &monster);

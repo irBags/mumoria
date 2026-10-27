@@ -101,6 +101,7 @@ std::map<std::string, int> boss_max_hp; // "depth:key" -> hit points when made
 std::map<MuLevel *, time_t> ticked;     // when each level's timers last ran
 std::set<int> held;                     // tags whose monsters the script moves (mu.hold)
 std::set<int> npcs;                     // tags of NPCs: held, unharmed, talked to (mu.npc)
+std::map<int, char> letters;            // tags drawn as a letter of the script's (mu.letter)
 
 void *alloc(void *, void *ptr, size_t osize, size_t nsize) {
     if (ptr == nullptr) {
@@ -234,7 +235,7 @@ void push_monster(lua_State *l, int id) {
     set_int(l, "id", id);
     set_int(l, "_c", m.creature_id);
     set_str(l, "name", muMonsterName(m));
-    set_str(l, "letter", std::string(1, (char) c.sprite));
+    set_str(l, "letter", std::string(1, (char) muMonsterSprite(m)));
     set_int(l, "level", c.level);
     set_int(l, "x", m.pos.x);
     set_int(l, "y", m.pos.y);
@@ -899,11 +900,30 @@ int l_town_expiry(lua_State *l) {
 
 // mu.npc(tag): monsters with this tag are NPCs: held, unharmed, and walking
 // into one fires the talk event instead of a blow
+int l_letter(lua_State *l);
+
 int l_npc(lua_State *l) {
     int tag = tags.get(luaL_checkstring(l, 1));
     if (tag != 0) {
         npcs.insert(tag);
         held.insert(tag);
+    }
+    if (!lua_isnoneornil(l, 2)) {
+        return l_letter(l); // mu.npc(tag, letter)
+    }
+    return 0;
+}
+
+// mu.letter(tag, letter): monsters with this tag are drawn as that letter
+// (any printable character but a space), not their creature's
+int l_letter(lua_State *l) {
+    int tag = tags.get(luaL_checkstring(l, 1));
+    std::string letter = luaL_checkstring(l, 2);
+    if (letter.size() != 1 || letter[0] <= ' ' || letter[0] > '~') {
+        return luaL_error(l, "mu.letter: one printable character, not '%s'", letter.c_str());
+    }
+    if (tag != 0) {
+        letters[tag] = letter[0];
     }
     return 0;
 }
@@ -1360,7 +1380,7 @@ const luaL_Reg MU[] = {
     {"monsters", l_monsters}, {"find_boss", l_find_boss}, {"tagged", l_tagged}, {"despawn", l_despawn},
     {"portal", l_portal},     {"find_portal", l_find_portal}, {"close_portal", l_close_portal}, {"set_phase", l_set_phase}, {"hurt", l_hurt}, {"heal", l_heal},   {"drop", l_drop},
     {"items", l_items},       {"take", l_take},     {"walk", l_walk},           {"hold", l_hold},           {"town_expiry", l_town_expiry},
-    {"npc", l_npc},           {"_draw", l_draw},    {"tile", l_tile},           {"enter_dungeon", l_enter_dungeon},
+    {"npc", l_npc},           {"letter", l_letter}, {"_draw", l_draw},    {"tile", l_tile},           {"enter_dungeon", l_enter_dungeon},
     {"leave_dungeon", l_leave_dungeon}, {"level", l_level}, {"pay", l_pay},
     {"give", l_give},         {"teleport", l_teleport}, {"player", l_player}, {"players", l_players},     {"glow", l_glow},           {"random", l_random},
     {"now", l_now},           {"depth", l_depth},   {"log", l_log},             {"set", l_set},             {"get", l_get},
@@ -1639,6 +1659,7 @@ void open_state() {
     memory = 0;
     held.clear();
     npcs.clear();
+    letters.clear();
     mu_town_expiry = true; // until a script takes the job
     L = lua_newstate(alloc, nullptr);
     lua_atpanic(L, [](lua_State *l) -> int {
@@ -1790,6 +1811,11 @@ bool mu_script_is_boss(int tag) {
 
 bool muMonsterHeld(Monster_t const &monster) {
     return monster.mu_script != 0 && held.count(monster.mu_script) != 0;
+}
+
+uint8_t muMonsterSprite(Monster_t const &monster) {
+    auto it = monster.mu_script != 0 ? letters.find(monster.mu_script) : letters.end();
+    return it != letters.end() ? (uint8_t) it->second : creatures_list[monster.creature_id].sprite;
 }
 
 bool muMonsterFriendly(Monster_t const &monster) {

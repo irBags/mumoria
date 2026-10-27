@@ -11,7 +11,7 @@
 local TAG = "warden"
 local SPOT = {x = 33, y = 11} -- where he stands (or as near as is free)
 
-mu.npc(TAG)
+mu.npc(TAG, "W") -- drawn as a W
 
 local function warden() return mu.tagged(TAG)[1] end
 

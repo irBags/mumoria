@@ -191,7 +191,7 @@ char caveGetTileSymbol(Coord_t const &coord) {
     }
 
     if (tile.creature_id > 1 && monsters[tile.creature_id].lit) {
-        return creatures_list[monsters[tile.creature_id].creature_id].sprite;
+        return MU_SPRITE(monsters[tile.creature_id]);
     }
 
     if (!tile.permanent_light && !tile.temporary_light && !tile.field_mark) {

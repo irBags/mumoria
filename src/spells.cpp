@@ -271,7 +271,7 @@ bool spellDetectInvisibleCreaturesWithinVicinity() {
             monster.lit = true;
 
             // works correctly even if hallucinating
-            panelPutTile((char) creatures_list[monster.creature_id].sprite, Coord_t{monster.pos.y, monster.pos.x});
+            panelPutTile((char) MU_SPRITE(monster), Coord_t{monster.pos.y, monster.pos.x});
 
             detected = true;
         }
@@ -571,7 +571,7 @@ bool spellDetectMonsters() {
             detected = true;
 
             // works correctly even if hallucinating
-            panelPutTile((char) creatures_list[monster.creature_id].sprite, Coord_t{monster.pos.y, monster.pos.x});
+            panelPutTile((char) MU_SPRITE(monster), Coord_t{monster.pos.y, monster.pos.x});
         }
     }
 
@@ -1960,7 +1960,7 @@ bool spellDetectEvil() {
             detected = true;
 
             // works correctly even if hallucinating
-            panelPutTile((char) creatures_list[monster.creature_id].sprite, Coord_t{monster.pos.y, monster.pos.x});
+            panelPutTile((char) MU_SPRITE(monster), Coord_t{monster.pos.y, monster.pos.x});
         }
     }
 

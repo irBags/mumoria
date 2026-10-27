@@ -77,7 +77,10 @@
 #define MU_ONLY(...) __VA_ARGS__
 // A monster's name: a script may give one its own (mumoria/script.cpp).
 #define MU_NAME(monster, creature) muMonsterName(monster)
+// The letter it is drawn as: a script may give its tag its own.
+#define MU_SPRITE(monster) muMonsterSprite(monster)
 #else
 #define MU_ONLY(...)
 #define MU_NAME(monster, creature) ((creature).name)
+#define MU_SPRITE(monster) (creatures_list[(monster).creature_id].sprite)
 #endif
