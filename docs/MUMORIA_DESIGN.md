@@ -469,12 +469,21 @@ steps, and what stays compatible.
     monster appears in a ring; teleporting shows where it was
 * The animations use their own random numbers, never the engine's.
 * **Damage numbers:** the damage done rises from the square for the player
-  whose fight it is: green over what they hit (`monsterTakeHit`, and a PvP
-  blow), red over their own `@` (`playerTakesHit`: blows, spells, traps,
-  poison, starvation). The engine takes the damage just before it queues
-  the blow or the bolt, so a number waits (`muFxDamage`) and shows at that
-  animation's moment of impact (`Anim::impact`); any left show when the turn
-  ends (`muFxDamageShow`). Others nearby see only the animation.
+  whose fight it is: over what they hit (`monsterTakeHit`, and a PvP
+  blow), over their own `@` (`playerTakesHit`: blows, spells, traps,
+  poison, starvation), and `+N` over it for healing (`spellChangePlayerHitPoints`)
+  and mana (a Restore Mana potion). The engine takes the damage just before
+  it queues the blow or the bolt, so a number waits (`muFxDamage`) and shows
+  at that animation's moment of impact (`Anim::impact`); any left show when
+  the turn ends (`muFxDamageShow`). Others nearby see only the animation.
+* **Their colours** (Mike's, 2026-10-26; `Anim::colour`): white dealt, gold
+  a critical dealt, red taken, bright red a critical taken (PvP; Umoria's
+  monsters never land one), green healing, blue mana. Damage a spell or a
+  missile deals takes the animation's element: orange fire (a flask of oil
+  too), cyan frost, purple every other magic (magic missile, lightning,
+  acid, poison, drain, the holy and the dark); an arrow or a thrown thing
+  stays white. A critical is said by `muFxDamageCritical()` just before the
+  damage (melee, thrown, PvP), and goes with the next number.
 * **Chat bubbles:** any chat line (say, party, guild, world, tell) pops a
   white `...` bubble over the speaker's `@` for 1.5 s (`muFxChat`, called
   from `social.cpp`), below them if someone stands in the row above. It is
@@ -924,9 +933,11 @@ of the following against the built server:
   player's whose turn it is is added when it moves (`monster.cpp`); levels
   saved before (version 1) get their monsters' own speeds back on load (a
   boss one step more). Measured again after loading them: 0 drift on both
-* damage numbers (2.18): a bot fighting a jackal saw green numbers one row
+* damage numbers (2.18): a bot fighting a jackal saw numbers one row
   over the jackal, then a row higher and dimmer, and red ones over its `@`
-  for each bite, the values the engine dealt
+  for each bite, the values the engine dealt. Colours (2026-10-26): a
+  warrior's blows white, the kobold's red, a mage's magic missiles purple;
+  gold, bright red, green, blue, orange and cyan not yet seen in a test
 * `^X` (save and exit), 2026-10-24: Umoria's ends in `endGame()`, whose hook
   recorded every call as a death, so `^X` killed the character (8 lost since
   2026-10-22, "(saved)" in the graveyard; the `mumoria_tmp_<pid>.sav` files

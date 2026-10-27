@@ -310,6 +310,7 @@ static bool playerDrinkPotion(uint32_t flags, uint8_t item_type) {
                 break;
             case PotionSpellTypes::RestoreMana:
                 if (py.misc.current_mana < py.misc.mana) {
+                    MU_ONLY(muFxDamage(py.pos, py.misc.mana - py.misc.current_mana, MU_NUM_MANA);) // +N in blue
                     py.misc.current_mana = py.misc.mana;
                     printMessage("Your feel your head clear.");
                     printCharacterCurrentMana();

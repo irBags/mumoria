@@ -655,7 +655,7 @@ void playerTakesHit(int damage, const char *creature_name_label) {
         damage = 0;
     }
     py.misc.current_hp -= damage;
-    MU_ONLY(muFxDamage(py.pos, damage, true);) // red, over your @
+    MU_ONLY(muFxDamage(py.pos, damage, MU_NUM_TAKEN);) // red, over your @
 
     if (py.misc.current_hp >= 0) {
         printCharacterCurrentHitPoints();
@@ -1219,6 +1219,7 @@ static void playerAttackMonster(Coord_t coord) {
         }
 
         // See if we done it in.
+        MU_ONLY(if (fx_critical) muFxDamageCritical();) // its number in gold
         bool slain = monsterTakeHit(creature_id, damage) >= 0;
         MU_ONLY(muFxSwing(py.pos, coord, item.category_id, item.id, slain ? MU_FX_KILL : MU_FX_HIT, fx_critical);)
         if (slain) {
@@ -1472,7 +1473,8 @@ bool playerTunnelWall(Coord_t coord, int digging_ability, int digging_chance) {
 #ifdef MUMORIA
 // playerAttackMonster()'s blows, against a player's armour class; no slays,
 // no confusing touch (those are for monsters).
-int muPlayerMeleeDamage(int target_ac, const char *target_name, Coord_t target) {
+int muPlayerMeleeDamage(int target_ac, const char *target_name, Coord_t target, bool &critical) {
+    critical = false;
     Inventory_t &item = py.inventory[PlayerEquipment::Wield];
     int blows, total_to_hit;
     playerCalculateToHitBlows(item.category_id, item.weight, blows, total_to_hit);
@@ -1499,6 +1501,7 @@ int muPlayerMeleeDamage(int target_ac, const char *target_name, Coord_t target) 
             damage = playerWeaponCriticalBlow(1, 0, damage, PlayerClassLevelAdj::BTH);
         }
         muFxSwing(py.pos, target, item.category_id, item.id, MU_FX_HIT, damage > plain);
+        critical = critical || damage > plain;
         damage += py.misc.plusses_to_damage;
         total += damage > 0 ? damage : 0;
     }

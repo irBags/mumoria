@@ -58,6 +58,7 @@ struct MuSession {
     bool pvp = false;
     int64_t pvp_changed_at = 0;
     int pending_pvp_damage = 0; // struck by another player: applied on our turn
+    bool pending_pvp_critical = false; // and a blow of it was critical
     std::string pvp_attacker;
     MuSession *arrive_near = nullptr; // /goto, /summon: arrive beside them
     int pending_raid = -1;   // stepped through a raid gate on this depth (raid.cpp)

@@ -53,13 +53,17 @@ thread_local int64_t cursor = 0; // when this player's animations are free again
 
 // Damage numbers (muFxDamage): the engine takes the damage just before it
 // plays the blow or the bolt, so a number waits for that animation and shows
-// at its moment of impact; any left are shown when the turn ends.
+// at its moment of impact; any left are shown when the turn ends. Its
+// colour says what it was (MuFxNumber, critical, and the animation's
+// element): see show_numbers.
 struct Number {
     Coord_t at;
     int amount;
-    bool taken; // red over your @; else green over what you hit
+    int kind; // MuFxNumber
+    bool critical;
 };
 thread_local std::vector<Number> numbers;
+thread_local bool next_critical = false; // muFxDamageCritical()
 const int NUMBER_MS = 450; // each of its two heights
 thread_local int together = 0;
 thread_local int64_t together_start = -1, together_end = 0;
@@ -308,6 +312,42 @@ class Anim {
         impact_ = at;
     }
 
+    // What the spell or missile is (MuFxElement): the colour of the damage it deals.
+    void element(int e) {
+        element_ = e;
+    }
+
+    // A number's colours, bright then fading (xterm 256): white dealt, gold
+    // a critical, red taken, bright red a critical taken, green healing,
+    // blue mana; dealt by a spell, orange fire, cyan frost, purple the rest
+    // (magic, lightning, acid, poison, drain, the holy and the dark).
+    std::pair<int, int> colour(Number const &n) const {
+        switch (n.kind) {
+            case MU_NUM_TAKEN:
+                return n.critical ? std::make_pair(196, 203) : std::make_pair(160, 124);
+            case MU_NUM_HEAL:
+                return {46, 34};
+            case MU_NUM_MANA:
+                return {33, 26};
+            default:
+                break;
+        }
+        if (n.critical) {
+            return {220, 178};
+        }
+        switch (element_) {
+            case -1:
+            case MU_FX_PHYSICAL:
+                return {231, 248};
+            case MU_FX_FIRE:
+                return {208, 166};
+            case MU_FX_FROST:
+                return {51, 117};
+            default:
+                return {171, 98};
+        }
+    }
+
     // The waiting damage numbers, from this animation's impact (its start if
     // none): over the square, then a row higher, fading. Only the player whose
     // fight it is sees them (the one loaded: attacker or victim).
@@ -317,10 +357,12 @@ class Anim {
             std::vector<MuFxCell> cells;
             int64_t t0 = start_ + (impact_ >= 0 ? impact_ : 0);
             for (Number const &n : numbers) {
-                std::string digits = std::to_string(n.amount);
+                bool gain = n.kind == MU_NUM_HEAL || n.kind == MU_NUM_MANA;
+                std::string digits = (gain ? "+" : "") + std::to_string(n.amount);
                 int x0 = n.at.x - ((int) digits.size() - 1) / 2;
+                std::pair<int, int> c = colour(n);
                 for (int rise = 0; rise < 2; rise++) {
-                    uint32_t look = rise == 0 ? fg(n.taken ? 196 : 46) : MU_ATTR_FG(n.taken ? 160 : 34);
+                    uint32_t look = rise == 0 ? fg(c.first) : MU_ATTR_FG(c.second);
                     int64_t from = t0 + rise * NUMBER_MS;
                     for (size_t i = 0; i < digits.size(); i++) {
                         cells.push_back(MuFxCell{from, from + NUMBER_MS, (int16_t) (n.at.y - 1 - rise), (int16_t) (x0 + (int) i), digits[i], look});
@@ -422,6 +464,7 @@ class Anim {
     int64_t start_;
     int length_ = 0;
     int impact_ = -1;
+    int element_ = -1; // none: a blow
 };
 
 // The four squares beside c (diagonal: the four corners). ch 0: pointing outwards.
@@ -622,6 +665,7 @@ void muFxRay(Coord_t from, int direction, Coord_t end, int element, int outcome,
     char head = glyph != 0 ? glyph : element == MU_FX_LIGHTNING || element == MU_FX_PHYSICAL ? radial(d) : p.glyph;
     std::string what = missile != nullptr ? std::string(missile) + "_" : "";
     Anim a;
+    a.element(element);
     if (shoot != nullptr) {
         a.sound(0, from, shoot);
     }
@@ -663,6 +707,7 @@ void muFxBall(Coord_t from, int direction, Coord_t center, int element) {
     Palette const &p = pal(element);
     char head = element == MU_FX_LIGHTNING ? radial(dir_vec(direction)) : p.glyph;
     Anim a;
+    a.element(element);
     int t = same(from, center) ? 0 : flight(a, from, direction, center, p, head, element);
     blast(a, t, center, p);
     a.sound(t, center, "blast");
@@ -690,6 +735,7 @@ static int aim(Anim &a, Coord_t from, Coord_t to, Palette const &p, int ms) {
 void muFxBreath(Coord_t from, Coord_t center, int element) {
     Palette const &p = pal(element);
     Anim a;
+    a.element(element);
     a.voice(0, from, voice_at(from), "roar"); // a breath is drawn with a roar
     int t = aim(a, from, center, p, 20);
     blast(a, t, center, p);
@@ -702,6 +748,7 @@ void muFxBolt(Coord_t from, Coord_t to, int element, int outcome) {
     Palette const &p = pal(element);
     Coord_t d{sign(to.y - from.y), sign(to.x - from.x)};
     Anim a;
+    a.element(element);
     int t = aim(a, from, to, p, STEP_MS);
     a.impact(t);
     if (outcome == MU_FX_RESIST) {
@@ -953,13 +1000,22 @@ void muFxDeath(Coord_t at, int creature_id) {
     death_n++;
 }
 
-void muFxDamage(Coord_t at, int amount, bool taken) {
+void muFxDamage(Coord_t at, int amount, int kind) {
+    bool critical = next_critical && (kind == MU_NUM_DEALT || kind == MU_NUM_TAKEN);
+    if (kind == MU_NUM_DEALT || kind == MU_NUM_TAKEN) {
+        next_critical = false;
+    }
     if (amount > 0) {
-        numbers.push_back(Number{at, amount, taken});
+        numbers.push_back(Number{at, amount, kind, critical});
     }
 }
 
+void muFxDamageCritical() {
+    next_critical = true;
+}
+
 void muFxDamageShow() {
+    next_critical = false; // a critical that did no harm (an NPC struck) stays this turn's
     if (!numbers.empty()) {
         Anim a; // starts when this player's animations so far have played
         a.play();

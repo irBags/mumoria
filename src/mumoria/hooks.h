@@ -41,8 +41,8 @@ std::string muGoldFound(int32_t gold, const char *description);
 // game.player_free_turn: chat is free, an attack takes a turn.
 bool muCommand(char key);
 // One round of Umoria's melee against another player (player.cpp): says
-// each hit and miss, returns the damage done.
-int muPlayerMeleeDamage(int target_ac, const char *target_name, Coord_t target);
+// each hit and miss, returns the damage done (critical: a blow of it was).
+int muPlayerMeleeDamage(int target_ac, const char *target_name, Coord_t target, bool &critical);
 // The end of each game turn (others on the level are told to redraw).
 void muTurnDone();
 // Town buildings 7-9 (store door sub-categories 107-109).
@@ -99,11 +99,17 @@ void muFxMonsterBlow(Coord_t from, Coord_t target, int description, bool hit, bo
 // One melee blow; weapon is the wielded item's category (TV_*), object_id
 // its game_objects[] entry (the sound is by kind: a sword's, an axe's).
 void muFxSwing(Coord_t from, Coord_t target, int weapon, int object_id, int outcome, bool critical);
-// Damage as a number over the map, for the player whose fight it is: green
-// over what they hit (taken false), red over their own @ (taken true). It
+// Damage as a number over the map, for the player whose fight it is: dealt
+// over what they hit, taken over their own @, healing and mana as +N. It
 // shows at the next animation's moment of impact, or by muFxDamageShow()
-// (the turn's end) if no animation comes.
-void muFxDamage(Coord_t at, int amount, bool taken);
+// (the turn's end) if no animation comes. Its colour: white dealt, gold a
+// critical, red taken, bright red a critical taken, green healing, blue
+// mana; a spell's damage orange (fire), cyan (frost) or purple (the rest),
+// by the animation it comes with.
+enum MuFxNumber { MU_NUM_DEALT, MU_NUM_TAKEN, MU_NUM_HEAL, MU_NUM_MANA };
+void muFxDamage(Coord_t at, int amount, int kind);
+// The next damage dealt or taken is a critical blow's.
+void muFxDamageCritical();
 void muFxDamageShow();
 // A chat bubble over the player at `at` who just spoke.
 void muFxChat(Coord_t at);

@@ -626,12 +626,17 @@ static void pvp_attack(MuSession *s) {
     } else {
         game.player_free_turn = false;
         int ac = t->ctx.py.misc.ac + t->ctx.py.misc.magical_ac;
-        int damage = muPlayerMeleeDamage(ac, t->char_name.c_str(), at);
+        bool critical;
+        int damage = muPlayerMeleeDamage(ac, t->char_name.c_str(), at, critical);
         if (damage > 0) {
             t->pending_pvp_damage += damage;
+            t->pending_pvp_critical = t->pending_pvp_critical || critical;
             t->pvp_attacker = s->char_name;
             t->event_pending = true;
-            muFxDamage(at, damage, false); // green for the attacker; red for them when it lands
+            if (critical) {
+                muFxDamageCritical();
+            }
+            muFxDamage(at, damage, MU_NUM_DEALT); // for the attacker; red for them when it lands
         }
         say(t, damage > 0 ? s->char_name + " strikes you for " + std::to_string(damage) + "!" : s->char_name + " attacks you, and misses.");
         mu_conn_poke(t->conn);
@@ -1413,6 +1418,10 @@ bool muCommand(char key) {
         if (s->pending_pvp_damage > 0) {
             int damage = s->pending_pvp_damage;
             s->pending_pvp_damage = 0;
+            if (s->pending_pvp_critical) {
+                muFxDamageCritical(); // bright red
+                s->pending_pvp_critical = false;
+            }
             playerDisturb(1, 0);
             printMessage((s->pvp_attacker + " hits you.").c_str());
             playerTakesHit(damage, s->pvp_attacker.c_str()); // a death ends the turn loop

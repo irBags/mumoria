@@ -239,7 +239,9 @@ void playerThrowItem() {
                     printMessage(msg);
 
                     tdam = itemMagicAbilityDamage(thrown_item, tdam, damage);
+                    MU_ONLY(int fx_plain = tdam;)
                     tdam = playerWeaponCriticalBlow((int) thrown_item.weight, tpth, tdam, PlayerClassLevelAdj::BTHB);
+                    MU_ONLY(if (tdam > fx_plain) muFxDamageCritical();) // its number in gold
 
                     if (tdam < 0) {
                         tdam = 0;

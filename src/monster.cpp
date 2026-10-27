@@ -1424,7 +1424,7 @@ int monsterTakeHit(int monster_id, int damage) {
 #endif
     monster.sleep_count = 0;
     monster.hp -= damage;
-    MU_ONLY(muFxDamage(monster.pos, damage, false);) // green, for whoever hit it
+    MU_ONLY(muFxDamage(monster.pos, damage, MU_NUM_DEALT);) // for whoever hit it
 
     if (monster.hp >= 0) {
         MU_ONLY(muMonsterHurt(monster_id);)

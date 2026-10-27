@@ -1981,12 +1981,14 @@ bool spellChangePlayerHitPoints(int adjustment) {
         return false;
     }
 
+    MU_ONLY(int fx_before = py.misc.current_hp;)
     py.misc.current_hp += adjustment;
     if (py.misc.current_hp > py.misc.max_hp) {
         py.misc.current_hp = py.misc.max_hp;
         py.misc.current_hp_fraction = 0;
     }
     printCharacterCurrentHitPoints();
+    MU_ONLY(muFxDamage(py.pos, py.misc.current_hp - fx_before, MU_NUM_HEAL);) // +N in green
     MU_ONLY(muFxHeal(py.pos);)
 
     adjustment = adjustment / 5;
