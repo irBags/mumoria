@@ -26,6 +26,8 @@
 #include "session.h"
 #include "social.h"
 
+void push_level(MuLevel *level);
+
 namespace {
 
 lua_State *L = nullptr;
@@ -98,6 +100,7 @@ std::vector<std::string> boss_tags;     // the tags mu.boss and boss= made bosse
 std::map<std::string, int> boss_max_hp; // "depth:key" -> hit points when made
 std::map<MuLevel *, time_t> ticked;     // when each level's timers last ran
 std::set<int> held;                     // tags whose monsters the script moves (mu.hold)
+std::set<int> npcs;                     // tags of NPCs: held, unharmed, talked to (mu.npc)
 
 void *alloc(void *, void *ptr, size_t osize, size_t nsize) {
     if (ptr == nullptr) {
@@ -462,10 +465,12 @@ int find_creature(std::string const &want) {
     return partial;
 }
 
-bool spawn_spot(Coord_t const &near, bool far, Coord_t &out) {
+bool spawn_spot(Coord_t const &near, bool far, Coord_t &out, bool exact = false) {
     for (int tries = 0; tries < 3000; tries++) {
         Coord_t c;
-        if (far) {
+        if (exact && tries == 0) {
+            c = near;
+        } else if (far) {
             c = Coord_t{(int32_t) randomNumber(dg.height - 2), (int32_t) randomNumber(dg.width - 2)};
         } else {
             int r = 1 + tries / 40;
@@ -513,11 +518,19 @@ int l_spawn(lua_State *l) {
         near = coord_arg(l, lua_gettop(l));
     }
     lua_pop(l, 1);
+    bool exact = false; // at=: on that square if it is free (else near it)
+    lua_getfield(l, 1, "at");
+    if (!lua_isnil(l, -1)) {
+        near = coord_arg(l, lua_gettop(l));
+        exact = true;
+        far = false;
+    }
+    lua_pop(l, 1);
     bool many = int_field(l, 1, "count", 0) > 0; // then a list; else the monster itself (or nil)
     int count = std::max(1, std::min(50, int_field(l, 1, "count", 1)));
     double hp = num_field(l, 1, "hp", 1.0);
     int speed = int_field(l, 1, "speed", 0);
-    bool awake = bool_field(l, 1, "awake", !far);
+    bool awake = bool_field(l, 1, "awake", !far && !exact);
     std::string boss = str_field(l, 1, "boss", ""), tag_name = str_field(l, 1, "tag", "");
     std::string shown = str_field(l, 1, "name", "");
     int tag = !boss.empty() ? boss_index(boss) : !tag_name.empty() ? tags.get(tag_name) : 0;
@@ -528,7 +541,7 @@ int l_spawn(lua_State *l) {
     int made = 0;
     for (int i = 0; i < count; i++) {
         Coord_t c;
-        if (!spawn_spot(near, far, c) || !monsterPlaceNew(c, creature, !awake)) {
+        if (!spawn_spot(near, far, c, exact && i == 0) || !monsterPlaceNew(c, creature, !awake)) {
             break;
         }
         int id = dg.floor[c.y][c.x].creature_id;
@@ -799,6 +812,20 @@ bool walkable(Coord_t const &c) {
            (t.treasure_id == 0 || pickable(c));
 }
 
+void move_monster(int id, Coord_t to) {
+    Monster_t &m = monsters[id];
+    Coord_t from{m.pos.y, m.pos.x};
+    dungeonMoveCreatureRecord(from, to);
+    if (m.lit) {
+        m.lit = false;
+        dungeonLiteSpot(from);
+    }
+    m.pos.y = to.y;
+    m.pos.x = to.x;
+    m.distance_from_player = (uint8_t) coordDistanceBetween(py.pos, to);
+    monsterUpdateVisibility(id);
+}
+
 // mu.walk(monster, place, steps): up to `steps` squares along the shortest way
 // there, waiting when someone is in it. Where it is now, or nil if it cannot get there.
 int l_walk(lua_State *l) {
@@ -848,15 +875,7 @@ int l_walk(lua_State *l) {
         if (best.y == here.y && best.x == here.x) {
             break; // there, or someone is in the way
         }
-        dungeonMoveCreatureRecord(here, best);
-        if (m.lit) {
-            m.lit = false;
-            dungeonLiteSpot(here);
-        }
-        m.pos.y = best.y;
-        m.pos.x = best.x;
-        m.distance_from_player = (uint8_t) coordDistanceBetween(py.pos, best);
-        monsterUpdateVisibility(id);
+        move_monster(id, best);
     }
     mu_level_loaded()->dirty = true;
     push_place(l, Coord_t{m.pos.y, m.pos.x});
@@ -875,6 +894,272 @@ int l_hold(lua_State *l) {
 // mu.town_expiry(on): false leaves clearing the town's floor to the script
 int l_town_expiry(lua_State *l) {
     mu_town_expiry = lua_toboolean(l, 1) != 0;
+    return 0;
+}
+
+// mu.npc(tag): monsters with this tag are NPCs: held, unharmed, and walking
+// into one fires the talk event instead of a blow
+int l_npc(lua_State *l) {
+    int tag = tags.get(luaL_checkstring(l, 1));
+    if (tag != 0) {
+        npcs.insert(tag);
+        held.insert(tag);
+    }
+    return 0;
+}
+
+// --- dungeons drawn by scripts (mu.dungeon in the prelude) ------------------------
+
+// One square of a dungeon's map (docs: scripts/README.md, "Dungeons").
+void draw_tile(Coord_t c, char ch) {
+    Tile_t &t = dg.floor[c.y][c.x];
+    if (t.treasure_id != 0) {
+        (void) dungeonDeleteObject(c);
+    }
+    t.perma_lit_room = false;
+    auto door = [&](uint16_t object, int lock, uint8_t feature) {
+        int id = popt();
+        t.treasure_id = (uint8_t) id;
+        inventoryItemCopyTo(object, game.treasure.list[id]);
+        game.treasure.list[id].misc_use = (int16_t) lock;
+        t.feature_id = feature;
+    };
+    switch (ch) {
+        case '#':
+        case ' ':
+            t.feature_id = TILE_GRANITE_WALL;
+            break;
+        case '%':
+            t.feature_id = TILE_MAGMA_WALL;
+            break;
+        case ',':
+            t.feature_id = TILE_CORR_FLOOR;
+            break;
+        case '+':
+            door(config::dungeon::objects::OBJ_CLOSED_DOOR, 0, TILE_BLOCKED_FLOOR);
+            break;
+        case '\'':
+            door(config::dungeon::objects::OBJ_OPEN_DOOR, 0, TILE_CORR_FLOOR);
+            break;
+        case '&':
+            door(config::dungeon::objects::OBJ_CLOSED_DOOR, 10 + randomNumber(10), TILE_BLOCKED_FLOOR);
+            break;
+        case '$':
+            door(config::dungeon::objects::OBJ_SECRET_DOOR, 0, TILE_BLOCKED_FLOOR);
+            break;
+        case ':':
+            dungeonPlaceRubble(c);
+            break;
+        default: // lit floor ('.', and a trap '^' on it)
+            t.feature_id = TILE_DARK_FLOOR;
+            t.perma_lit_room = true;
+            if (ch == '^') {
+                dungeonSetTrap(c, randomNumber(config::dungeon::objects::MAX_TRAPS) - 1);
+            }
+            break;
+    }
+}
+
+// Walls and doors beside lit floor light with it.
+void light_walls() {
+    for (int y = 1; y < dg.height - 1; y++) {
+        for (int x = 1; x < dg.width - 1; x++) {
+            Tile_t const &t = dg.floor[y][x];
+            if (!t.perma_lit_room || t.feature_id > MAX_CAVE_ROOM) {
+                continue;
+            }
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dx = -1; dx <= 1; dx++) {
+                    Tile_t &n = dg.floor[y + dy][x + dx];
+                    if (n.feature_id >= MIN_CLOSED_SPACE) {
+                        n.perma_lit_room = true;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// mu._draw(map, tiles): draws the dungeon being built from `map` (rows of
+// text). tiles = {letter = tile} for letters not drawn as lit floor. Returns
+// {letter = {places}} for every letter and digit, '@' and '<'.
+int l_draw(lua_State *l) {
+    MuRaid *d = mu_dungeon_of(mu_level_loaded());
+    if (d == nullptr || !d->marks.empty()) {
+        return luaL_error(l, "mu._draw: only while a dungeon is built");
+    }
+    std::string map = luaL_checkstring(l, 1);
+    luaL_checktype(l, 2, LUA_TTABLE);
+    std::vector<std::string> rows;
+    size_t start = map.empty() || map[0] != '\n' ? 0 : 1;
+    while (start <= map.size()) {
+        size_t end = map.find('\n', start);
+        std::string row = map.substr(start, end == std::string::npos ? std::string::npos : end - start);
+        if (!row.empty() && row.back() == '\r') {
+            row.pop_back();
+        }
+        rows.push_back(row);
+        if (end == std::string::npos) {
+            break;
+        }
+        start = end + 1;
+    }
+    while (!rows.empty() && rows.back().find_first_not_of(' ') == std::string::npos) {
+        rows.pop_back();
+    }
+    size_t widest = 0;
+    for (std::string const &r : rows) {
+        widest = std::max(widest, r.size());
+    }
+    if ((int) rows.size() > dg.height - 2 || (int) widest > dg.width - 2) {
+        return luaL_error(l, "the map is %d by %d; at most %d rows of %d", (int) rows.size(), (int) widest, dg.height - 2, dg.width - 2);
+    }
+
+    // all rock, its edge the boundary; no monsters, no items
+    for (int y = 0; y < dg.height; y++) {
+        for (int x = 0; x < dg.width; x++) {
+            Tile_t &t = dg.floor[y][x];
+            t = Tile_t{};
+            t.feature_id = y == 0 || x == 0 || y == dg.height - 1 || x == dg.width - 1 ? TILE_BOUNDARY_WALL : TILE_GRANITE_WALL;
+        }
+    }
+    for (auto &item : game.treasure.list) {
+        inventoryItemCopyTo(config::dungeon::objects::OBJ_NOTHING, item);
+    }
+    game.treasure.current_id = config::treasure::MIN_TREASURE_LIST_ID;
+    next_free_monster_id = config::monsters::MON_MIN_INDEX_ID;
+    monster_multiply_total = 0;
+
+    d->marks.assign((size_t) MAX_HEIGHT * MAX_WIDTH, 0);
+    std::map<char, std::vector<Coord_t>> places;
+    std::vector<Coord_t> exits;
+    for (size_t r = 0; r < rows.size(); r++) {
+        for (size_t c = 0; c < rows[r].size(); c++) {
+            char ch = rows[r][c];
+            Coord_t at{(int32_t) r + 1, (int32_t) c + 1};
+            char tile = ch;
+            if (isalnum((unsigned char) ch) || ch == '@' || ch == '<') {
+                places[ch].push_back(at);
+                tile = '.'; // the floor around it: dark if any beside it is
+                for (int k = 0; k < 4; k++) {
+                    int rr = (int) r + (k == 0) - (k == 1), cc = (int) c + (k == 2) - (k == 3);
+                    if (rr >= 0 && rr < (int) rows.size() && cc >= 0 && cc < (int) rows[(size_t) rr].size() && rows[(size_t) rr][(size_t) cc] == ',') {
+                        tile = ',';
+                    }
+                }
+                lua_pushlstring(l, &ch, 1);
+                if (lua_gettable(l, 2) == LUA_TSTRING && lua_rawlen(l, -1) > 0) {
+                    tile = lua_tostring(l, -1)[0];
+                }
+                lua_pop(l, 1);
+                if (isalnum((unsigned char) ch)) {
+                    d->marks[(size_t) (at.y * MAX_WIDTH + at.x)] = (uint8_t) ch;
+                }
+                if (ch == '<') {
+                    exits.push_back(at);
+                }
+            }
+            draw_tile(at, tile);
+        }
+    }
+    if (places['@'].empty()) {
+        return luaL_error(l, "the map has no '@' (where the players come in)");
+    }
+    d->entry = places['@'][0];
+    for (Coord_t const &c : exits) {
+        mu_dungeon_place_exit(c);
+    }
+    light_walls();
+
+    lua_newtable(l);
+    for (auto const &e : places) {
+        lua_newtable(l);
+        int n = 0;
+        for (Coord_t const &c : e.second) {
+            push_place(l, c);
+            lua_rawseti(l, -2, ++n);
+        }
+        lua_setfield(l, -2, std::string(1, e.first).c_str());
+    }
+    return 1;
+}
+
+// mu.tile(place, tile): one square of the map drawn again (a gate opens, a
+// wall rises). False if someone stands where a wall would go.
+int l_tile(lua_State *l) {
+    need_world(l);
+    Coord_t at = coord_arg(l, 1);
+    std::string tile = luaL_checkstring(l, 2);
+    char ch = tile.empty() ? '.' : tile[0];
+    bool solid = ch == '#' || ch == ' ' || ch == '%' || ch == '+' || ch == '&' || ch == '$' || ch == ':';
+    if (solid && (dg.floor[at.y][at.x].creature_id != 0 || muOtherPlayerAt(at))) {
+        lua_pushboolean(l, 0);
+        return 1;
+    }
+    bool lit = dg.floor[at.y][at.x].perma_lit_room;
+    draw_tile(at, ch);
+    if (lit) {
+        dg.floor[at.y][at.x].perma_lit_room = true;
+    }
+    dg.floor[at.y][at.x].permanent_light = dg.floor[at.y][at.x].perma_lit_room;
+    dungeonLiteSpot(at);
+    mu_level_loaded()->dirty = true;
+    lua_pushboolean(l, 1);
+    return 1;
+}
+
+// mu.enter_dungeon(player, key): the player in the event goes into that
+// dungeon: their party's copy, or a new one
+int l_enter_dungeon(lua_State *l) {
+    need_world(l);
+    MuSession *p = player_arg(l, 1);
+    std::string key = luaL_checkstring(l, 2);
+    if (p != mu_self) {
+        return luaL_error(l, "mu.enter_dungeon: only the player in the event or command");
+    }
+    if (mu_script_dungeon_depth(key) < 1) {
+        return luaL_error(l, "mu.enter_dungeon: no dungeon '%s'", key.c_str());
+    }
+    p->pending_dungeon = key;
+    dg.generate_new_level = true;
+    return 0;
+}
+
+// mu.leave_dungeon(player): out of the dungeon they are in, to where they came in from
+int l_leave_dungeon(lua_State *l) {
+    need_world(l);
+    MuSession *p = player_arg(l, 1);
+    if (p != mu_self) {
+        return luaL_error(l, "mu.leave_dungeon: only the player in the event or command");
+    }
+    mu_dungeon_leave(p);
+    lua_pushboolean(l, mu_dungeon_of(p->level) != nullptr ? 1 : 0);
+    return 1;
+}
+
+// mu.level(): the level of the event, as the level events give it
+int l_level(lua_State *l) {
+    need_world(l);
+    if (mu_self->level == nullptr) {
+        lua_pushnil(l);
+    } else {
+        push_level(mu_self->level);
+    }
+    return 1;
+}
+
+// mu.pay(player, gold)
+int l_pay(lua_State *l) {
+    need_world(l);
+    MuSession *p = player_arg(l, 1);
+    int gold = (int) luaL_checkinteger(l, 2);
+    mu_with_player(mu_self, p, [&] {
+        py.misc.au = std::max<int32_t>(0, py.misc.au + gold);
+        printCharacterGoldValue();
+    });
+    if (p != mu_self) {
+        mu_conn_poke(p->conn);
+    }
     return 0;
 }
 
@@ -946,8 +1231,24 @@ int l_give(lua_State *l) {
 
 int l_teleport(lua_State *l) {
     need_world(l);
-    MuSession *p = player_arg(l, 1);
     Coord_t at = coord_arg(l, 2);
+    if (lua_istable(l, 1)) {
+        lua_getfield(l, 1, "_c");
+        bool monster = !lua_isnil(l, -1);
+        lua_pop(l, 1);
+        if (monster) {
+            // a monster: onto that square if it is open and nobody is there
+            int id = monster_arg(l, 1);
+            bool ok = id >= 0 && walkable(at) && dg.floor[at.y][at.x].creature_id == 0 && !muOtherPlayerAt(at);
+            if (ok) {
+                move_monster(id, at);
+                mu_level_loaded()->dirty = true;
+            }
+            lua_pushboolean(l, ok ? 1 : 0);
+            return 1;
+        }
+    }
+    MuSession *p = player_arg(l, 1);
     if (p->level != mu_self->level) {
         return luaL_error(l, "mu.teleport: %s is on another level", p->char_name.c_str());
     }
@@ -1059,6 +1360,8 @@ const luaL_Reg MU[] = {
     {"monsters", l_monsters}, {"find_boss", l_find_boss}, {"tagged", l_tagged}, {"despawn", l_despawn},
     {"portal", l_portal},     {"find_portal", l_find_portal}, {"close_portal", l_close_portal}, {"set_phase", l_set_phase}, {"hurt", l_hurt}, {"heal", l_heal},   {"drop", l_drop},
     {"items", l_items},       {"take", l_take},     {"walk", l_walk},           {"hold", l_hold},           {"town_expiry", l_town_expiry},
+    {"npc", l_npc},           {"_draw", l_draw},    {"tile", l_tile},           {"enter_dungeon", l_enter_dungeon},
+    {"leave_dungeon", l_leave_dungeon}, {"level", l_level}, {"pay", l_pay},
     {"give", l_give},         {"teleport", l_teleport}, {"player", l_player}, {"players", l_players},     {"glow", l_glow},           {"random", l_random},
     {"now", l_now},           {"depth", l_depth},   {"log", l_log},             {"set", l_set},             {"get", l_get},
     {"_error", l_error},      {"_boss_key", l_boss_key}, {nullptr, nullptr},
@@ -1066,12 +1369,12 @@ const luaL_Reg MU[] = {
 
 // mu.on, mu.command and mu.boss, in Lua.
 const char *PRELUDE = R"LUA(
-local handlers = {enter = {}, kill = {}, hurt = {}, portal = {}}
+local handlers = {enter = {}, kill = {}, hurt = {}, portal = {}, talk = {}}
 local commands = {}
 local timers = {}
 
 function mu.on(event, fn)
-  assert(handlers[event], "mu.on: no event '" .. tostring(event) .. "' (enter, kill, hurt, portal)")
+  assert(handlers[event], "mu.on: no event '" .. tostring(event) .. "' (enter, kill, hurt, portal, talk)")
   assert(type(fn) == "function", "mu.on needs a function")
   table.insert(handlers[event], fn)
 end
@@ -1089,15 +1392,18 @@ function mu.every(seconds, fn, depth)
   table.insert(timers, {every = seconds, fn = fn, depth = depth, due = 0})
 end
 
+local dungeon_tick -- below
+
 function mu._tick(p, level)
   local now = mu.now()
   for _, t in ipairs(timers) do
-    if (t.depth == nil or t.depth == level.depth) and now >= t.due then
+    if (t.depth == nil or t.depth == level.depth) and not level.dungeon and now >= t.due then
       t.due = now + t.every
       local ok, err = pcall(t.fn, p, level)
       if not ok then mu._error(tostring(err)) end
     end
   end
+  dungeon_tick(p, level)
 end
 
 function mu.command(name, fn, help)
@@ -1181,11 +1487,158 @@ mu.on("kill", function(p, m)
   for _ = 1, loot.count or 0 do mu.drop(loot.tier or "rare", m) end
   if b.defeat then mu.say_world((b.defeat:gsub("{player}", p.name))) end
 end)
+
+-- mu.dungeon{key=, name=, label=, depth=, level=, about=, map=, legend=,
+--            build=, enter=, step=, talk=, hurt=, kill=, tick=}
+-- (scripts/README.md, "Dungeons"). Each copy's state table `d` is passed to
+-- the handlers: d.key, d.id, d.party, d.places, d.flags.
+local dungeons, order, state = {}, {}, {}
+
+function mu.dungeon(d)
+  assert(type(d.key) == "string" and type(d.map) == "string", "mu.dungeon needs a key and a map")
+  d.name = d.name or d.key
+  d.label = d.label or (d.name:gsub("^the ", ""))
+  d.depth = d.depth or 1
+  if not dungeons[d.key] then order[#order + 1] = d.key end
+  dungeons[d.key] = d
+end
+
+-- every dungeon, in the order they were made: {key, name, level, about, depth}
+function mu.dungeons()
+  local out = {}
+  for _, k in ipairs(order) do
+    local d = dungeons[k]
+    out[#out + 1] = {key = k, name = d.name, level = d.level, about = d.about, depth = d.depth}
+  end
+  return out
+end
+
+function mu._dungeon_depth(key)
+  local d = dungeons[key]
+  return d and d.depth or -1
+end
+
+function mu._dungeon_build(key, id, party)
+  local d = dungeons[key]
+  local tiles = {}
+  for ch, v in pairs(d.legend or {}) do
+    local t = type(v) == "string" and v or (type(v) == "table" and v.tile)
+    if t then tiles[ch] = t end
+  end
+  local st = {key = key, id = id, party = party, name = d.name, flags = {}}
+  st.places = mu._draw(d.map, tiles)
+  state[id] = st
+  for ch, v in pairs(d.legend or {}) do
+    if type(v) == "table" then
+      for _, at in ipairs(st.places[ch] or {}) do
+        if v.spawn then
+          local s = {}
+          for k, x in pairs(v.spawn) do s[k] = x end
+          s.at = at
+          mu.spawn(s)
+        end
+        if v.item then mu.drop(v.item, at) end
+      end
+    end
+  end
+  if d.build then d.build(st) end
+  return d.name, d.label
+end
+
+-- the dungeon of a level (the event's if none given) and its copy's state
+local function here(level)
+  level = level or mu.level()
+  if not (level and level.dungeon) then return nil end
+  local st = state[level.id]
+  if not st then -- the scripts were reloaded inside it: what it knew is lost
+    st = {key = level.dungeon, id = level.id, party = level.party, places = {}, flags = {}}
+    state[level.id] = st
+  end
+  return dungeons[level.dungeon], st
+end
+
+mu.on("enter", function(p, level)
+  local d, st = here(level)
+  if d and d.enter then d.enter(p, st) end
+end)
+for _, event in ipairs({"kill", "hurt", "talk"}) do
+  mu.on(event, function(p, m)
+    local d, st = here()
+    if d and d[event] then d[event](p, m, st) end
+  end)
+end
+
+function mu._step(p, level, letter, place)
+  local d, st = here(level)
+  if d and d.step then d.step(p, st, letter, place) end
+end
+
+function mu._gone(id) state[id] = nil end
+
+dungeon_tick = function(p, level)
+  local d, st = here(level)
+  if not (d and d.tick) then return end
+  local now = mu.now()
+  if now < (st.tick_due or 0) then return end
+  st.tick_due = now + (d.every or 1)
+  local ok, err = pcall(d.tick, p, st)
+  if not ok then mu._error(tostring(err)) end
+end
+
+-- true (and noted) if the player may have `what`'s reward now, once every
+-- `hours` (12); else false and the seconds still to wait
+function mu.reward_once(p, what, hours)
+  local key = "reward:" .. what .. ":" .. p.name
+  local wait = (hours or 12) * 3600 - (mu.now() - tonumber(mu.get(key) or "0"))
+  if wait > 0 then return false, wait end
+  mu.set(key, mu.now())
+  return true
+end
+
+-- Everyone on this level has r's reward, once every r.hours (12) each:
+-- r = {key=, title=, tier=, gold=, items={{key=, name=, one_in=}}}
+function mu.reward_party(r)
+  for _, p in ipairs(mu.players()) do
+    local ok, wait = mu.reward_once(p, r.key, r.hours)
+    if ok then
+      local got = {}
+      local function give(what, name)
+        if not mu.give(p, what) then mu.drop(what, p); name = name .. " (at your feet: your pack is full)" end
+        got[#got + 1] = name
+      end
+      if r.tier then give(r.tier, "a " .. r.tier .. " piece") end
+      for _, it in ipairs(r.items or {}) do
+        if mu.random(it.one_in or 1) == 1 then give(it.key, it.name or it.key) end
+      end
+      if r.gold then
+        mu.pay(p, r.gold)
+        got[#got + 1] = r.gold .. " gold"
+      end
+      mu.tell(p, "[" .. r.title .. "] Your reward: " .. table.concat(got, ", ") .. ".")
+    else
+      mu.tell(p, string.format("[%s] You had this reward already: the next in %dh %dm.", r.title, wait // 3600, wait % 3600 // 60))
+    end
+  end
+end
+
+-- In a boss's hurt handler: each phase {at = percent, run = fn(m)} it has
+-- fallen to runs once, in order.
+function mu.phases(m, phases)
+  local pct = m.hp * 100 // math.max(1, m.max_hp)
+  local n = m.phase
+  while phases[n + 1] and pct <= phases[n + 1].at do
+    n = n + 1
+    mu.set_phase(m, n)
+    m.phase = n
+    phases[n].run(m)
+  end
+end
 )LUA";
 
 void open_state() {
     memory = 0;
     held.clear();
+    npcs.clear();
     mu_town_expiry = true; // until a script takes the job
     L = lua_newstate(alloc, nullptr);
     lua_atpanic(L, [](lua_State *l) -> int {
@@ -1297,7 +1750,11 @@ void push_level(MuLevel *level) {
     lua_newtable(L);
     set_int(L, "depth", level->depth);
     set_int(L, "players", (lua_Integer) level->players.size());
-    if (mu_raid_title(level) != nullptr) {
+    if (MuRaid *d = mu_dungeon_of(level)) {
+        set_str(L, "dungeon", d->script);
+        set_int(L, "id", d->id);
+        set_int(L, "party", d->party);
+    } else if (mu_raid_title(level) != nullptr) {
         set_str(L, "raid", mu_raid_title(level));
     }
 }
@@ -1333,6 +1790,70 @@ bool mu_script_is_boss(int tag) {
 
 bool muMonsterHeld(Monster_t const &monster) {
     return monster.mu_script != 0 && held.count(monster.mu_script) != 0;
+}
+
+bool muMonsterFriendly(Monster_t const &monster) {
+    return monster.mu_script != 0 && npcs.count(monster.mu_script) != 0;
+}
+
+bool muMonsterTalk(int creature_id) {
+    if (creature_id < config::monsters::MON_MIN_INDEX_ID || creature_id >= next_free_monster_id || !muMonsterFriendly(monsters[creature_id])) {
+        return false;
+    }
+    if (mu_self != nullptr && begin_fire("talk")) {
+        push_player(L, mu_self);
+        push_monster(L, creature_id);
+        fire(2);
+    }
+    return true;
+}
+
+int mu_script_dungeon_depth(std::string const &key) {
+    if (!get_mu("_dungeon_depth")) {
+        return -1;
+    }
+    lua_pushstring(L, key.c_str());
+    if (!call(1, 1)) {
+        return -1;
+    }
+    int depth = (int) lua_tointeger(L, -1);
+    lua_pop(L, 1);
+    return depth;
+}
+
+bool mu_script_dungeon_build(MuLevel *level) {
+    MuRaid *d = mu_dungeon_of(level);
+    if (d == nullptr || !get_mu("_dungeon_build")) {
+        return false;
+    }
+    lua_pushstring(L, d->script.c_str());
+    lua_pushinteger(L, d->id);
+    lua_pushinteger(L, d->party);
+    if (!call(3, 2)) {
+        return false;
+    }
+    d->title = lua_tostring(L, -2) != nullptr ? lua_tostring(L, -2) : d->script;
+    d->label = lua_tostring(L, -1) != nullptr ? lua_tostring(L, -1) : d->title;
+    lua_pop(L, 2);
+    return !d->marks.empty(); // it drew a map
+}
+
+void mu_script_step(MuSession *s, char letter, Coord_t const &at) {
+    if (!get_mu("_step")) {
+        return;
+    }
+    push_player(L, s);
+    push_level(s->level);
+    lua_pushlstring(L, &letter, 1);
+    push_place(L, at);
+    (void) call(4, 0);
+}
+
+void mu_script_dungeon_gone(int id) {
+    if (get_mu("_gone")) {
+        lua_pushinteger(L, id);
+        (void) call(1, 0);
+    }
 }
 
 const char *muMonsterName(Monster_t const &monster) {

@@ -695,6 +695,31 @@ steps, and what stays compatible.
   `<name>.wav` to change it (the build copies them beside the client every
   time). Only CC0 sounds go in, unless credited as their licence asks.
 
+### 2.25 Script dungeons
+
+* **Why:** dungeons with a story (a map, a puzzle, a boss fight in phases)
+  that admins write in Lua rather than C. The API is `scripts/README.md`,
+  "Dungeons"; four come in `scripts/examples/5?_*.lua`.
+* **Instances:** a script dungeon is a raid instance (`MuLevel::raid`) whose
+  `MuRaid::script` names it: one copy per party, never saved, deleted
+  `MU_RAID_EMPTY_SECONDS` after the last one leaves (the script hears of it,
+  `mu._gone`). `world.cpp new_dungeon` makes it at the script's `depth`,
+  then the script draws everything (`mu._draw` in `script.cpp`): the map's
+  tiles, its doors and traps, and where its letters are. No monster or item
+  is placed but the script's, and none arrive later (`muNewMonsterChance`).
+* **In and out:** `mu.enter_dungeon` sets `MuSession::pending_dungeon`; the
+  level change remembers where they came from (`dungeon_back_depth`,
+  `dungeon_back`), which the way out (store door 111, as a raid's), `/escape`
+  (`mu.leave_dungeon`) and a reconnect (the saved depth) all lead back to.
+* **Triggers:** each square of a map letter is noted (`MuRaid::marks`); the
+  turn a player moves onto one, the script's `step` fires (`mu_dungeon_step`).
+* **NPCs** (`mu.npc`): held (no turns), unharmed (`monsterTakeHit`), and
+  walking into one fires `talk` instead of a blow (`playerAttackPosition`).
+* **State:** each copy's Lua table lives in the prelude, by instance id; a
+  `/reload` while a copy is open loses it (its handlers get an empty one).
+* **Rewards** once per character per 12 hours per dungeon (`mu.reward_once`,
+  kept in `script_state` as `reward:<key>:<name>`).
+
 ## 3. Menus: drawn the way Umoria draws
 
 There are no new windows. Bank, Guild Hall, Auction House and Trade are drawn

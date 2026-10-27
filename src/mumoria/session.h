@@ -62,6 +62,11 @@ struct MuSession {
     MuSession *arrive_near = nullptr; // /goto, /summon: arrive beside them
     int pending_raid = -1;   // stepped through a raid gate on this depth (raid.cpp)
     bool to_gate = false;    // leaving a raid: arrive beside its gate
+    std::string pending_dungeon; // a script's dungeon to go into (script.cpp mu.enter_dungeon)
+    Coord_t arrive_at{-1, -1};   // leaving a script dungeon: arrive here (near it)
+    int dungeon_back_depth = 0;  // in a script dungeon: where its way out (and a reconnect) leads
+    Coord_t dungeon_back{-1, -1};
+    int last_step = -1;          // the square a dungeon's step event last fired for
     int store_in = -1;       // the store this player is shopping in (shops.cpp)
     Store_t store_view{};    // their own view of it, while someone else is loaded
     MuStoreTerms store_terms[MAX_STORES]{};

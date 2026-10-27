@@ -292,6 +292,10 @@ void rewards(MuSession *s, MuRaid const &raid, Coord_t const &center) {
 
 } // namespace
 
+void mu_dungeon_place_exit(Coord_t const &c) {
+    place_door(c, WAY_OUT);
+}
+
 bool mu_raid_gate_level(int depth) {
     return depth > 0 && depth % MU_RAID_INTERVAL == 0;
 }
@@ -392,6 +396,9 @@ void mu_raid_place_gate(MuLevel *level) {
 }
 
 void mu_raid_announce(MuSession *s, MuLevel *level) {
+    if (mu_dungeon_of(level) != nullptr) {
+        return; // its script greets them
+    }
     if (level->raid != nullptr) {
         Theme const &t = THEMES[level->raid->theme];
         int lord = -1;
@@ -420,12 +427,29 @@ int mu_raid_party_here(MuSession *s) {
     return n < 1 ? 1 : n;
 }
 
+MuRaid *mu_dungeon_of(MuLevel const *level) {
+    return level != nullptr && level->raid != nullptr && !level->raid->script.empty() ? level->raid : nullptr;
+}
+
+MuLevel *mu_dungeon_of_party(MuSession *s, std::string const &key) {
+    if (s->party == nullptr) {
+        return nullptr;
+    }
+    for (MuSession *m : s->party->members) {
+        MuRaid *d = m != s ? mu_dungeon_of(m->level) : nullptr;
+        if (d != nullptr && d->script == key) {
+            return m->level;
+        }
+    }
+    return nullptr;
+}
+
 MuLevel *mu_raid_of_party(MuSession *s, int gate) {
     if (s->party == nullptr) {
         return nullptr;
     }
     for (MuSession *m : s->party->members) {
-        if (m != s && m->level != nullptr && m->level->raid != nullptr && m->level->raid->gate == gate) {
+        if (m != s && m->level != nullptr && m->level->raid != nullptr && m->level->raid->script.empty() && m->level->raid->gate == gate) {
             return m->level;
         }
     }
@@ -511,17 +535,36 @@ void muMonsterHurt(int monster_id) {
 }
 
 const char *mu_raid_title(MuLevel const *level) {
+    if (MuRaid *d = mu_dungeon_of(level)) {
+        return d->title.c_str();
+    }
     return level != nullptr && level->raid != nullptr ? THEMES[level->raid->theme].name : nullptr;
 }
 
 const char *muRaidName() {
     MuLevel *level = mu_level_loaded();
+    if (MuRaid *d = mu_dungeon_of(level)) {
+        return d->label.c_str();
+    }
     return level != nullptr && level->raid != nullptr ? THEMES[level->raid->theme].label : nullptr;
+}
+
+void mu_dungeon_leave(MuSession *s) {
+    if (mu_dungeon_of(s->level) != nullptr) {
+        s->arrive_at = s->dungeon_back;
+        mu_send_to_depth(s->dungeon_back_depth);
+    }
 }
 
 void muRaidGate(int sub_category_id) {
     MuSession *s = mu_self;
     MuSafePrompt safe;
+    if (sub_category_id == WAY_OUT && mu_dungeon_of(s->level) != nullptr) {
+        if (getInputConfirmation(("Leave " + mu_dungeon_of(s->level)->title + "?").c_str())) {
+            mu_dungeon_leave(s);
+        }
+        return;
+    }
     if (sub_category_id == WAY_OUT) {
         if (getInputConfirmation("Leave the raid through the gate?")) {
             s->to_gate = true;

@@ -1724,8 +1724,19 @@ void spellTeleportPlayerTo(Coord_t coord) {
     int counter = 0;
 
     Coord_t rnd_coord = Coord_t{0, 0};
+#ifdef MUMORIA
+    // a script's teleport lands on the square itself when it is free
+    bool exact = coordInBounds(coord) && dg.floor[coord.y][coord.x].feature_id < MIN_CLOSED_SPACE && dg.floor[coord.y][coord.x].creature_id < 2 &&
+                 !muOtherPlayerAt(coord);
+#else
+    bool exact = false;
+#endif
 
     do {
+        if (exact) {
+            rnd_coord = coord;
+            break;
+        }
         rnd_coord.y = coord.y + (randomNumber(2 * distance + 1) - (distance + 1));
         rnd_coord.x = coord.x + (randomNumber(2 * distance + 1) - (distance + 1));
         counter++;

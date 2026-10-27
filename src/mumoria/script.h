@@ -21,6 +21,14 @@ void mu_script_hurt(int monster_id); // a script's boss was hurt and lives
 void mu_script_tick(MuSession *s);
 // A monster's tag (Monster_t::mu_script) is a boss's: it drops a boss's loot.
 bool mu_script_is_boss(int tag);
+
+// Script dungeons (mu.dungeon): the depth `key` plays at (-1: no such dungeon);
+// drawing a new instance (loaded, level->raid set); a step on a marked
+// square; an instance deleted.
+int mu_script_dungeon_depth(std::string const &key);
+bool mu_script_dungeon_build(MuLevel *level);
+void mu_script_step(MuSession *s, char letter, Coord_t const &at);
+void mu_script_dungeon_gone(int id);
 // A chat command no one else knew: true if a script took it.
 bool mu_script_command(MuSession *s, std::string const &cmd, std::string const &args);
 // "/a /b" of the scripts' commands, for /help ("" if none).

@@ -1507,6 +1507,11 @@ int muPlayerMeleeDamage(int target_ac, const char *target_name, Coord_t target) 
 #endif
 
 void playerAttackPosition(Coord_t coord) {
+#ifdef MUMORIA
+    if (muMonsterTalk(dg.floor[coord.y][coord.x].creature_id)) {
+        return; // a script's NPC: walking into it is talking to it
+    }
+#endif
     // Is a Coward?
     if (py.flags.afraid > 0) {
         printMessage("You are too afraid!");

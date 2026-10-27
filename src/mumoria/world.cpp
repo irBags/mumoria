@@ -427,6 +427,21 @@ void mu_town_litter() {
     }
 }
 
+void mu_dungeon_step(MuSession *s) {
+    MuRaid *d = mu_dungeon_of(s->level);
+    if (d == nullptr || s->level != loaded_level || !in_level(py.pos)) {
+        return;
+    }
+    int square = py.pos.y * MAX_WIDTH + py.pos.x;
+    if (square == s->last_step) {
+        return;
+    }
+    s->last_step = square;
+    if (square < (int) d->marks.size() && d->marks[(size_t) square] != 0) {
+        mu_script_step(s, (char) d->marks[(size_t) square], py.pos);
+    }
+}
+
 int mu_town_item_age(Coord_t const &coord) {
     auto it = litter.find(coord.y * MAX_WIDTH + coord.x);
     return dg.current_level != 0 || it == litter.end() ? -1 : (int) (time(nullptr) - it->second);
@@ -552,7 +567,8 @@ static void fresh_townspeople() {
     monsterPlaceNewWithinDistance(night ? config::monsters::MON_MIN_TOWNSFOLK_NIGHT : config::monsters::MON_MIN_TOWNSFOLK_DAY, 3, true);
 }
 
-static std::vector<MuLevel *> raids; // raid instances: never saved
+static std::vector<MuLevel *> raids; // raid and script dungeon instances: never saved
+static int last_dungeon_id = 0;
 
 // A new level made for a raid from the gate on `gate` (raid.cpp fills it).
 static MuLevel *new_raid(int gate, int party) {
@@ -567,6 +583,39 @@ static MuLevel *new_raid(int gate, int party) {
     L->created_at = time(nullptr);
     loaded_level = L;
     L->raid = mu_raid_build(gate, party);
+    save_level(L);
+    raids.push_back(L);
+    return L;
+}
+
+// A new level drawn by the script dungeon `key`, for `party` players; null
+// if its script cannot make it.
+static MuLevel *new_dungeon(std::string const &key, int party) {
+    int depth = mu_script_dungeon_depth(key);
+    if (depth < 1) {
+        return nullptr;
+    }
+    if (loaded_level != nullptr) {
+        save_level(loaded_level);
+    }
+    loaded_level = nullptr;
+    dg.current_level = (int16_t) depth;
+    generateCave(); // the size and the empty lists; the script draws over the rest
+    auto *L = new MuLevel();
+    L->depth = depth;
+    L->created_at = time(nullptr);
+    L->raid = new MuRaid();
+    L->raid->gate = depth;
+    L->raid->party = party;
+    L->raid->script = key;
+    L->raid->id = ++last_dungeon_id;
+    loaded_level = L;
+    if (!mu_script_dungeon_build(L)) {
+        loaded_level = nullptr;
+        delete L->raid;
+        delete L;
+        return nullptr;
+    }
     save_level(L);
     raids.push_back(L);
     return L;
@@ -618,8 +667,13 @@ static void enter_level(MuSession *s, MuLevel *L) {
     } else if (s->to_gate && mu_raid_find_gate(gate)) {
         py.pos = gate; // back out of a raid
         s->arrive_near = nullptr;
+    } else if (s->arrive_at.y > 0) {
+        py.pos = s->arrive_at; // back out of a script dungeon
+        s->arrive_near = nullptr;
     }
     s->to_gate = false;
+    s->arrive_at = Coord_t{-1, -1};
+    s->last_step = -1;
     // below the town a party arrives together: beside a member already there.
     // Anyone else drops in at random.
     if (s->arrive_near == nullptr && depth > 0 && s->party != nullptr && L->raid == nullptr && py.pos.y < 0) {
@@ -700,6 +754,28 @@ void mu_change_level(MuSession *s) {
         mu_char_store(s);
         return;
     }
+    if (!s->pending_dungeon.empty()) {
+        // into a script's dungeon: the party's, or a new one for them
+        std::string key = s->pending_dungeon;
+        s->pending_dungeon.clear();
+        if (mu_dungeon_of(s->level) == nullptr) {
+            s->dungeon_back_depth = s->level->depth;
+            s->dungeon_back = py.pos;
+        }
+        int party = mu_raid_party_here(s);
+        MuLevel *inside = mu_dungeon_of_party(s, key);
+        dg.current_level = (int16_t) s->level->depth;
+        leave_level(s);
+        MuLevel *L = inside != nullptr ? inside : new_dungeon(key, party);
+        if (L == nullptr) {
+            s->arrive_at = s->dungeon_back; // the script failed: back where they were
+            mu_enter_game(s, s->dungeon_back_depth);
+        } else {
+            enter_level(s, L);
+        }
+        mu_char_store(s);
+        return;
+    }
     int new_depth = s->pending_depth >= 0 ? s->pending_depth : dg.current_level;
     s->pending_depth = -1;
     dg.current_level = (int16_t) s->level->depth;
@@ -725,6 +801,9 @@ void mu_world_maintain(bool force_all) {
         if (L->players.empty() && L->empty_since != 0 && now - L->empty_since >= MU_RAID_EMPTY_SECONDS) {
             if (L == loaded_level) {
                 loaded_level = nullptr;
+            }
+            if (mu_dungeon_of(L) != nullptr) {
+                mu_script_dungeon_gone(L->raid->id);
             }
             delete L->raid;
             delete L;
@@ -829,6 +908,9 @@ bool mu_char_store(MuSession *s) {
         return false;
     }
     int depth = s->level != nullptr ? s->level->depth : 0;
+    if (mu_dungeon_of(s->level) != nullptr) {
+        depth = s->dungeon_back_depth; // an instance is gone by the time they come back
+    }
     int changed = mu_db_run("UPDATE character SET save = ?, level = ?, depth = ?, saved_at = ? WHERE id = ? AND alive = 1", "biiii",
                             blob.data(), (int) blob.size(), (int64_t) py.misc.level, (int64_t) depth, (int64_t) time(nullptr), s->char_id);
     s->last_save = time(nullptr);
@@ -952,6 +1034,9 @@ int muNewMonsterChance() {
     int chance = config::monsters::MON_CHANCE_OF_NEW;
     if (loaded_level == nullptr || loaded_level->depth == 0) {
         return chance;
+    }
+    if (mu_dungeon_of(loaded_level) != nullptr) {
+        return 1 << 30; // its script places every monster
     }
     // a party, or guild-mates together, count once; each lone player counts
     std::vector<const void *> teams;

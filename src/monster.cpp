@@ -1417,6 +1417,11 @@ int monsterTakeHit(int monster_id, int damage) {
     Monster_t &monster = monsters[monster_id];
     Creature_t const &creature = creatures_list[monster.creature_id];
 
+#ifdef MUMORIA
+    if (muMonsterFriendly(monster)) {
+        return -1; // a script's NPC takes no harm
+    }
+#endif
     monster.sleep_count = 0;
     monster.hp -= damage;
     MU_ONLY(muFxDamage(monster.pos, damage, false);) // green, for whoever hit it

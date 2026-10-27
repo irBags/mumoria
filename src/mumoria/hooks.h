@@ -134,6 +134,11 @@ const char *muMonsterName(Monster_t const &monster);
 void muScriptPortal(const char *key);
 // A monster a script moves itself (mu.hold): the engine gives it no turns.
 bool muMonsterHeld(Monster_t const &monster);
+// A script's NPC (mu.spawn{npc=true}): held, unharmed, and talked to, not hit.
+bool muMonsterFriendly(Monster_t const &monster);
+// The player walked into monster creature_id: true if it is an NPC (its
+// script's talk event fires) rather than something to attack.
+bool muMonsterTalk(int creature_id);
 
 // Raids (raid.cpp): a raid gate (110) or a raid's way out (111) stepped on.
 void muRaidGate(int sub_category_id);

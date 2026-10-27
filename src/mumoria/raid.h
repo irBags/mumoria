@@ -4,6 +4,9 @@
 
 #include "../headers.h"
 
+#include <string>
+#include <vector>
+
 struct MuSession;
 struct MuLevel;
 
@@ -16,7 +19,16 @@ struct MuRaid {
     int boss_hp = 0;  // the lord's full hit points
     int waves = 0;    // reinforcements it has called
     bool won = false;
+
+    // A script's dungeon (script.cpp mu.dungeon) rather than a gate's raid.
+    std::string script;       // its key; empty for a raid
+    std::string title, label; // "the Rat-King's Sewer"; on the depth line
+    int id = 0;               // this instance, for the script's state
+    std::vector<uint8_t> marks; // the map's letter on each square (y * MAX_WIDTH + x), 0 for none
 };
+
+// A script dungeon instance (null for a raid or a plain level).
+MuRaid *mu_dungeon_of(MuLevel const *level);
 
 bool mu_raid_gate_level(int depth);
 // The loaded level was just made for a raid from `gate`: fill it.
@@ -38,3 +50,9 @@ MuLevel *mu_raid_of_party(MuSession *s, int gate);
 std::string mu_raid_admin(MuSession *s, std::string const &arg);
 // "the Orc Warrens", or null when the level is not a raid.
 const char *mu_raid_title(MuLevel const *level);
+// A script dungeon `key` that one of s's party is in, or null.
+MuLevel *mu_dungeon_of_party(MuSession *s, std::string const &key);
+// s (loaded) leaves its script dungeon for where it came from.
+void mu_dungeon_leave(MuSession *s);
+// Its way out: a store door sub-category 111, as a raid's.
+void mu_dungeon_place_exit(Coord_t const &c);

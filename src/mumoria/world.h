@@ -121,6 +121,9 @@ void mu_world_maintain(bool force_all);
 // (checked once a second, on a turn in the town). A script can take the job
 // over (mu_town_expiry = false). Age in seconds, -1 if none is known there.
 void mu_town_litter();
+// In a script dungeon, s (loaded) moved onto a square of a letter of its map:
+// the script's step event.
+void mu_dungeon_step(MuSession *s);
 int mu_town_item_age(Coord_t const &coord);
 extern bool mu_town_expiry;
 
