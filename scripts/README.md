@@ -18,6 +18,14 @@ order. An admin's `/reload` loads them all again without a restart, and
 * `50_dungeon_warden.lua` with `51_rat_sewer.lua`, `52_bandit_fort.lua`,
   `53_lich_crypt.lua` and `54_dragon_forge.lua`: four dungeons drawn by
   their scripts, and the quest giver in the town who sends parties in.
+* Raids (`mu.raid`), each with its gate `0` in the dungeon:
+  `60_kobold_den.lua` (levels 1-3, gate at 50 ft), `61_old_crypt.lua`
+  (2-5, 100 ft, a drawn crypt), `62_snake_pit.lua` (3-5, 150 ft); and
+  deeper ones on several floors: `70_orc_hold.lua` (8-14, 350 ft, three
+  floors), `71_sunken_temple.lua` (15-22, 600 ft, two),
+  `72_giant_stair.lua` (18-28, 800 ft, four).
+* `80_inn.lua`: the Rusty Tankard, an inn in the town to hang out in,
+  drink and sleep (a shared, peaceful dungeon with furniture and NPCs).
 
 ## What a script may do
 
@@ -75,14 +83,14 @@ Timers run at the end of some player's turn, at most once a second a level,
 so on a level where nobody is acting time stands still (as it does for its
 monsters). `mu.every(1, fn, 0)` is a clock for the town.
 
-A **player** is `{name, level, class, race, x, y, depth, hp, max_hp, gold,
-admin, in_party}`. A **monster** is `{id, name, creature, letter, level, x,
+A **player** is `{name, level, class, race, x, y, depth, hp, max_hp, mana,
+max_mana, gold, admin, in_party}`. A **monster** is `{id, name, creature, letter, level, x,
 y, hp, max_hp, awake, phase, kind, boss, tag}`: `name` is the name it goes
 by (its own, if a script gave it one), `creature` what it really is, `kind`
 is `boss`, `captain` or `lord` for the game's own bosses, `boss` a script
 boss's key, `tag` a script's tag, `phase` the script's count (0 until set).
 A **level** is `{depth, players, raid}`, and in a script's dungeon
-`{depth, players, dungeon, id, party}`. All are copies: read them, then act
+`{depth, players, dungeon, id, party, floor, run}`. All are copies: read them, then act
 through `mu`.
 
 ## Doing things
@@ -101,12 +109,17 @@ These work inside an event or command (on the level of the player in it):
 | `mu.set_phase(monster, n)` / `mu.heal(monster, n)` | its phase; hit points (negative takes them) |
 | `mu.hurt(monster, n)` | as if the player struck it: true if it died (the kill and its events are theirs) |
 | `mu.despawn(monster)` | gone, no loot, no kill |
-| `mu.portal{key=, at=, glyph=, colour=}` | a portal (`0`, red by default; an xterm colour) at a place, or somewhere open away from the doors; its place, or nil |
+| `mu.portal{key=, at=, glyph=, colour=, gate=}` | a portal (`0`, red by default; an xterm colour) at a place, or somewhere open away from the doors; its place, or nil. `gate = true`: the gate of the dungeon or raid `key` (at most 11 letters), which shows it and lets a party in |
 | `mu.find_portal(key)` / `mu.close_portal(key)` | where it is / gone |
 | `mu.drop(what, place)` | a custom item by key, or a random item of a rarity ("epic") |
 | `mu.give(player, what)` | a custom item by key, or a random one of a rarity, into a pack (false if full) |
 | `mu.teleport(player or monster, place)` | moves a player on this level (onto that square if it is free, else near it), or a monster onto it (false if it is taken) |
 | `mu.pay(player, gold)` | gold into their purse (negative takes it) |
+| `mu.restore(player, {hp=, mana=, food=, cure=})` | hit points and mana back (a number, or `"full"`); `food = "full"` feeds them (never bloated); `cure = true` ends poison, confusion, blindness and fear |
+| `mu.buff(player, what, turns)` | a timed effect, as a potion's: `hero`, `bless`, `speed`, `slow`, `confused`, `poisoned`, `afraid`, `see_invisible`, `infravision`, `resist_fire`, `resist_cold` |
+| `mu.creatures{letters=, min=, max=}` | the names of the creatures drawn as those letters (any, if none given), of those levels |
+| `mu.spot{from=, near=, far=}` / `mu.spot{from=, farthest=true}` | a free open square (no wall, monster, item or player) that many squares from a place (the event's player if none), or the farthest found; nil if none |
+| `mu.decor(place, glyph, name, colour)` | furniture there: it blocks the way, cannot be dug, and walking into it is a dungeon's `bump` (`name`: at most 12 letters) |
 | `mu.level()` | the event's level, as events give it |
 | `mu.items()` / `mu.take(place)` | the items on the floor, `{x, y, name, age}` (`age`: seconds it has lain there, town only, else 0) / the one there is gone: its name, or nil |
 | `mu.hold(tag)` | monsters with this tag get no turns of their own: they neither move nor attack |
@@ -166,6 +179,7 @@ mu.dungeon{
   build = function(d) end,           -- the copy is drawn: place its boss, its loot
   enter = function(p, d) end,        -- a player arrives
   step = function(p, d, letter, place) end, -- a player stepped onto a letter's square
+  bump = function(p, d, letter, place) end, -- walked into a letter's decor (return false: not handled)
   talk = function(p, m, d) end,      -- walked into an NPC here
   hurt = function(p, m, d) end,      -- a tagged monster here was hurt
   kill = function(p, m, d) end,      -- a monster here died
@@ -173,11 +187,31 @@ mu.dungeon{
 }
 ```
 
-Map tiles: `#` and space rock, `%` magma, `.` lit floor, `,` dark floor, `+`
-a door, `'` an open door, `&` a locked door, `$` a secret door, `:` rubble,
-`^` a trap, `<` the way out, `@` where players arrive. Letters and digits
-are lit floor (dark beside dark floor) unless the legend says otherwise, and
-are places the script can use.
+Map tiles: `#` and space rock, `=` rock nothing can dig, `%` magma, `.` lit
+floor, `,` dark floor, `+` a door, `'` an open door, `&` a locked door, `$` a
+secret door, `:` rubble, `^` a trap, `<` the way out (on a deeper floor, the
+stairs up), `>` the stairs down, `@` where players arrive. Letters and
+digits are lit floor (dark beside dark floor) unless the legend says
+otherwise, and are places the script can use.
+
+A legend letter can be **decor**: `t = {decor = "=", name = "a table",
+colour = 137}` draws furniture (that glyph, that xterm colour) which blocks
+the way and cannot be dug; walking into it fires `bump` (else its name is
+told: "There is a table in the way.").
+
+**Floors.** `floors = {{...}, {...}}` makes a dungeon several floors deep,
+each `{name=, label=, depth=, map=, legend=, build=}`, or `generate = true`
+for a cave the game makes at that depth (without its stairs or monsters: a
+way in, and stairs down as far from it as can be found, unless it is the
+last floor). Stepping on `>` or `<` asks to go down or up. The floors a
+party has open stay open while any of them is on any floor, so the way back
+up leads where they came from; a member who comes in later starts on the
+first floor. The handlers serve every floor: `d.floor` says which, and
+`d.flags` is one table for all of a party's floors.
+
+`shared = true` makes one copy for everyone (an inn) rather than one a
+party; `safe = true` keeps players from fighting there; `hidden = true` keeps
+it out of `mu.dungeons()`.
 
 `d` is the copy's own table: `d.key`, `d.id`, `d.party` (how many it was
 made for), `d.places` (`d.places.K[1]` is the first `K`), and `d.flags`
@@ -186,7 +220,8 @@ for the script's own notes. Its handlers run only for that dungeon. Plain
 
 | Call | What it does |
 |---|---|
-| `mu.dungeons()` | every dungeon: `{key, name, level, about, depth}` |
+| `mu.dungeons()` | every dungeon: `{key, name, level, about, depth, floors, kind, gate}` (`kind`: `"dungeon"` or `"raid"`) |
+| `mu.here()` | in a dungeon, its floor's `d` (for commands, which are not given it); else nil |
 | `mu.enter_dungeon(player, key)` | the player in the event goes in (to their party's copy if one is open) |
 | `mu.leave_dungeon(player)` | out to where they came in from; false if not in one |
 | `mu.tile(place, tile)` | one square drawn again (a gate opens); false where someone stands in a wall's way |
@@ -195,3 +230,47 @@ for the script's own notes. Its handlers run only for that dungeon. Plain
 | `mu.reward_party{key=, title=, tier=, gold=, items={{key=, name=, one_in=}}}` | everyone on the level has their reward once every 12 hours |
 
 A copy's `d` is lost if the scripts are reloaded while it is open.
+
+`/escape` (in the prelude, so always there) leaves any dungeon or raid for
+where the player came in from.
+
+## Raids
+
+`mu.raid{}` is a dungeon filled the way the game's own raids are: sleeping
+packs all through it but not by the way in, captains with their guards, and
+a lord on the last floor who calls its guard at three quarters, half and a
+quarter of its hit points; all of it grows with the party that goes in. Its
+gate (`gate =` a depth, 0 the town) stands somewhere on that level and
+shows the raid, the party and the reward; the Dungeon Warden lists raids
+too. See `examples/60_kobold_den.lua` (one generated floor) and
+`examples/70_orc_hold.lua` (two generated floors and a drawn hall).
+
+```lua
+mu.raid{
+  key = "orc_hold",              -- at most 11 letters (it is the gate's key)
+  name = "the Orc Stronghold", label = "Orc Stronghold",
+  level = {8, 14},               -- the gate refuses below the first
+  about = "...", gate = 7, colour = 166,
+  floors = {
+    {name = "the Outer Caves", depth = 7, generate = true,
+     mobs = {"Orc", "Orc Shaman"},           -- or {letters = "o", min = 5, max = 12}
+     packs = 8, pack = {3, 5},               -- packs (a third more per member after the first) of 3 to 5
+     captains = 1, captain = {creature = "Orc Warrior", name = "Orc Sergeant", hp = 3}},
+    {name = "the War Chief's Hall", depth = 11, map = HALL, legend = {...}},
+  },
+  lord = {creature = "Black Orc", name = "Orc War Chief", hp = 6, speed = 1,
+          at = "L",                         -- a map letter; else the farthest square from the way in
+          guard = {"Orc Warrior", "Black Orc"},
+          phases = nil},                    -- or a mu.phases list, instead of its guard calls
+  loot = {tier = "rare", count = 3},        -- the lord drops these, one more per member
+  captain_loot = {tier = "uncommon", count = 2},
+  reward = {tier = "rare", gold = 400, items = {{key = "...", name = "...", one_in = 4}}, hours = 12},
+  enter = fn, step = fn, bump = fn, talk = fn, hurt = fn, kill = fn, tick = fn, build = fn,
+}
+```
+
+`hp` multiplies the creature's hit points; every monster has a fifth more
+per member after the first, the lord half its `hp` more. The lord's and the
+captains' loot rolls as a boss's. The lord's death drops its loot, gives
+everyone on that floor their reward (once every 12 hours each, as
+`mu.reward_party`) and tells the world.

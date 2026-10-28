@@ -25,6 +25,11 @@ struct MuRaid {
     std::string title, label; // "the Rat-King's Sewer"; on the depth line
     int id = 0;               // this instance, for the script's state
     std::vector<uint8_t> marks; // the map's letter on each square (y * MAX_WIDTH + x), 0 for none
+    int floor = 1;            // which of its floors (1 the first)
+    int run = 0;              // the floors made for one party share it (the first floor's id)
+    bool shared = false;      // one copy for everyone (an inn), not one per party
+    bool safe = false;        // players do not fight here
+    Coord_t up{0, 0}, down{0, 0}; // its stairs to the floor above (or the way out) and below
 };
 
 // A script dungeon instance (null for a raid or a plain level).
@@ -56,3 +61,22 @@ MuLevel *mu_dungeon_of_party(MuSession *s, std::string const &key);
 void mu_dungeon_leave(MuSession *s);
 // Its way out: a store door sub-category 111, as a raid's.
 void mu_dungeon_place_exit(Coord_t const &c);
+// Stairs between a dungeon's floors: store doors 113 (down) and 114 (up).
+void mu_dungeon_place_stairs(Coord_t const &c, bool down);
+// A script's raid gate: store door 115, the dungeon's key in the inscription.
+const uint8_t MU_SCRIPT_GATE = 115;
+// The loaded level, as Umoria made it, becomes a script dungeon's floor: no
+// stairs or monsters; a way in (and out, or up) and, if `down`, stairs down
+// as far from it as can be found.
+void mu_dungeon_generated(MuRaid *d, bool down);
+// A free open square (no wall, monster, item or player) between `near` and
+// `far` squares from `from`; false if none was found.
+bool mu_raid_spot(Coord_t const &from, int near, int far, Coord_t &out);
+// Of many free squares, the one farthest from `from`.
+Coord_t mu_raid_farthest(Coord_t const &from);
+// Decor: a script's furniture, an object that blocks the way (a table, the
+// bar). Rubble underneath (sub-category MU_DECOR), its name in the
+// inscription, its colour in to_ac.
+const uint8_t MU_DECOR = 200;
+bool mu_is_decor(Inventory_t const &item);
+void mu_place_decor(Coord_t const &c, char glyph, std::string const &name, int colour);

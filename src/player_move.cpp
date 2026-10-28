@@ -246,6 +246,9 @@ enum class TrapTypes {
     RaidGate,     // 110: a raid gate in the dungeon, and a raid's way out
     RaidExit,
     ScriptPortal, // 112: a script's portal (mumoria/script.cpp)
+    FloorDown,    // 113: a script dungeon's stairs down, and up
+    FloorUp,
+    ScriptGate,   // 115: a script raid's gate
 #endif
 };
 
@@ -344,10 +347,15 @@ static void playerStepsOnTrap(Coord_t coord) {
             break;
         case TrapTypes::RaidGate:
         case TrapTypes::RaidExit:
+        case TrapTypes::FloorDown:
+        case TrapTypes::FloorUp:
             muRaidGate((int) item.sub_category_id);
             break;
         case TrapTypes::ScriptPortal:
             muScriptPortal(item.inscription);
+            break;
+        case TrapTypes::ScriptGate:
+            muScriptGate(item.inscription);
             break;
 #endif
 
@@ -564,7 +572,9 @@ void playerMove(int direction, bool do_pickup) {
             // Can't move onto floor space
 
             if ((py.running_tracker == 0) && tile.treasure_id != 0) {
-                if (game.treasure.list[tile.treasure_id].category_id == TV_RUBBLE) {
+                if (MU_ONLY(muDecorBump(coord) ||) false) {
+                    // a script's furniture: its script answers, or its name is told
+                } else if (game.treasure.list[tile.treasure_id].category_id == TV_RUBBLE) {
                     printMessage("There is rubble blocking your way.");
                 } else if (game.treasure.list[tile.treasure_id].category_id == TV_CLOSED_DOOR) {
                     printMessage("There is a closed door blocking your way.");

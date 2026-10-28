@@ -159,8 +159,15 @@ bool muMonsterFriendly(Monster_t const &monster);
 // script's talk event fires) rather than something to attack.
 bool muMonsterTalk(int creature_id);
 
-// Raids (raid.cpp): a raid gate (110) or a raid's way out (111) stepped on.
+// Raids (raid.cpp): a raid gate (110), a raid's way out (111) or a script
+// dungeon's stairs (113 down, 114 up) stepped on; a script raid's gate (115,
+// its key in the inscription).
 void muRaidGate(int sub_category_id);
+void muScriptGate(const char *key);
+// The player walked into a script's decor (raid.h MU_DECOR): true if it was
+// decor (its script hears of it, or its name is told), else false.
+bool muDecorBump(Coord_t const &coord);
+bool muIsDecor(Coord_t const &coord);
 // A monster was hurt and lives (a raid's lord calls its guard).
 void muMonsterHurt(int monster_id);
 // The loaded level's raid, for the depth line; null when not in one.

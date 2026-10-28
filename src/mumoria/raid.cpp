@@ -40,7 +40,7 @@ const Theme THEMES[] = {
 };
 const int THEME_COUNT = (int) (sizeof(THEMES) / sizeof(THEMES[0]));
 
-const uint8_t GATE = 110, WAY_OUT = 111; // store door sub-categories
+const uint8_t GATE = 110, WAY_OUT = 111, DOWN = 113, UP = 114; // store door sub-categories
 
 int theme_of(int gate) {
     int t = gate / MU_RAID_INTERVAL - 1;
@@ -144,12 +144,12 @@ int spawn_around(Coord_t const &center, int n, std::vector<int> const &kinds, in
     return placed;
 }
 
-void place_door(Coord_t const &c, uint8_t sub) {
+void place_door(Coord_t const &c, uint8_t sub, char sprite = '0') {
     int id = popt();
     dg.floor[c.y][c.x].treasure_id = (uint8_t) id;
     inventoryItemCopyTo(config::dungeon::objects::OBJ_STORE_DOOR, game.treasure.list[id]);
     game.treasure.list[id].sub_category_id = sub;
-    game.treasure.list[id].sprite = '0';
+    game.treasure.list[id].sprite = (uint8_t) sprite;
 }
 
 // Raid treasure is gear: arms, armour, rings, amulets, staves and wands.
@@ -294,6 +294,102 @@ void rewards(MuSession *s, MuRaid const &raid, Coord_t const &center) {
 
 void mu_dungeon_place_exit(Coord_t const &c) {
     place_door(c, WAY_OUT);
+}
+
+void mu_dungeon_place_stairs(Coord_t const &c, bool down) {
+    if (dg.floor[c.y][c.x].treasure_id != 0) {
+        (void) dungeonDeleteObject(c);
+    }
+    place_door(c, down ? DOWN : UP, down ? '>' : '<');
+}
+
+bool mu_raid_spot(Coord_t const &from, int near, int far, Coord_t &out) {
+    if (far <= 12) {
+        // close by: every square in reach, one of them at random
+        std::vector<Coord_t> found;
+        for (int y = from.y - far; y <= from.y + far; y++) {
+            for (int x = from.x - far; x <= from.x + far; x++) {
+                Coord_t c{y, x};
+                int d = coordDistanceBetween(from, c);
+                if (d >= near && d <= far && free_floor(c) && !muOtherPlayerAt(c)) {
+                    found.push_back(c);
+                }
+            }
+        }
+        if (found.empty()) {
+            return false;
+        }
+        out = found[(size_t) randomNumber((int) found.size()) - 1];
+        return true;
+    }
+    for (int tries = 0; tries < 4000; tries++) {
+        Coord_t c = random_floor();
+        int d = coordDistanceBetween(from, c);
+        if (d >= near && d <= far && free_floor(c) && !muOtherPlayerAt(c)) {
+            out = c;
+            return true;
+        }
+    }
+    return false;
+}
+
+Coord_t mu_raid_farthest(Coord_t const &from) {
+    Coord_t best = from;
+    for (int i = 0; i < 400; i++) {
+        Coord_t c = random_floor();
+        if (free_floor(c) && coordDistanceBetween(c, from) > coordDistanceBetween(best, from)) {
+            best = c;
+        }
+    }
+    return best;
+}
+
+void mu_dungeon_generated(MuRaid *d, bool down) {
+    for (int y = 0; y < dg.height; y++) {
+        for (int x = 0; x < dg.width; x++) {
+            int id = dg.floor[y][x].treasure_id;
+            if (id != 0 && (game.treasure.list[id].category_id == TV_UP_STAIR || game.treasure.list[id].category_id == TV_DOWN_STAIR)) {
+                (void) dungeonDeleteObject(Coord_t{y, x});
+            }
+            if (dg.floor[y][x].creature_id > 1) {
+                dg.floor[y][x].creature_id = 0;
+            }
+        }
+    }
+    next_free_monster_id = config::monsters::MON_MIN_INDEX_ID;
+    monster_multiply_total = 0;
+    d->marks.assign((size_t) MAX_HEIGHT * MAX_WIDTH, 0);
+    d->entry = random_floor();
+    if (d->floor > 1) {
+        mu_dungeon_place_stairs(d->entry, false);
+    } else {
+        place_door(d->entry, WAY_OUT);
+    }
+    d->up = d->entry;
+    if (down) {
+        d->down = mu_raid_farthest(d->entry);
+        mu_dungeon_place_stairs(d->down, true);
+    }
+}
+
+bool mu_is_decor(Inventory_t const &item) {
+    return item.category_id == TV_RUBBLE && item.sub_category_id == MU_DECOR;
+}
+
+void mu_place_decor(Coord_t const &c, char glyph, std::string const &name, int colour) {
+    Tile_t &t = dg.floor[c.y][c.x];
+    if (t.treasure_id != 0) {
+        (void) dungeonDeleteObject(c);
+    }
+    int id = popt();
+    t.treasure_id = (uint8_t) id;
+    t.feature_id = TILE_BLOCKED_FLOOR;
+    Inventory_t &item = game.treasure.list[id];
+    inventoryItemCopyTo(config::dungeon::objects::OBJ_RUBBLE, item);
+    item.sub_category_id = MU_DECOR;
+    item.sprite = (uint8_t) glyph;
+    item.to_ac = (int16_t) colour;
+    snprintf(item.inscription, sizeof(item.inscription), "%s", name.c_str());
 }
 
 bool mu_raid_gate_level(int depth) {
@@ -514,6 +610,27 @@ std::string mu_raid_admin(MuSession *s, std::string const &arg) {
 
 // --- engine hooks -------------------------------------------------------------
 
+bool muIsDecor(Coord_t const &coord) {
+    int id = dg.floor[coord.y][coord.x].treasure_id;
+    return id != 0 && mu_is_decor(game.treasure.list[id]);
+}
+
+bool muDecorBump(Coord_t const &coord) {
+    if (!muIsDecor(coord)) {
+        return false;
+    }
+    game.player_free_turn = true;
+    MuSession *s = mu_self;
+    MuRaid *d = s != nullptr ? mu_dungeon_of(s->level) : nullptr;
+    size_t square = (size_t) (coord.y * MAX_WIDTH + coord.x);
+    if (d != nullptr && square < d->marks.size() && d->marks[square] != 0 && mu_script_bump(s, (char) d->marks[square], coord)) {
+        return true;
+    }
+    std::string name = game.treasure.list[dg.floor[coord.y][coord.x].treasure_id].inscription;
+    printMessage(("There is " + (name.empty() ? std::string("something") : name) + " in the way.").c_str());
+    return true;
+}
+
 void muMonsterHurt(int monster_id) {
     mu_script_hurt(monster_id); // script.cpp: a script's boss
     Monster_t &m = monsters[monster_id];
@@ -556,9 +673,84 @@ void mu_dungeon_leave(MuSession *s) {
     }
 }
 
+// The gate of a script's raid (mu.raid's gate=): what is inside, the party,
+// the reward; 'e' goes in.
+void muScriptGate(const char *key) {
+    MuSession *s = mu_self;
+    MuSafePrompt safe;
+    MuDungeonInfo info;
+    if (!mu_script_dungeon_info(key, s, 1, info)) {
+        printMessage("The gate is dark and cold.");
+        return;
+    }
+    MuLevel *inside = mu_dungeon_of_party(s, key);
+    std::string party;
+    if (s->party != nullptr) {
+        for (MuSession *m : s->party->members) {
+            party += (party.empty() ? "" : ", ") + m->char_name + (m->level == s->level ? "" : m->level == inside && inside != nullptr ? " (inside)" : " (away)");
+        }
+    }
+    char line[100];
+    clearScreen();
+    snprintf(line, sizeof(line), "The Raid Gate: %s", info.name.c_str());
+    putString(line, Coord_t{2, 20});
+    putString("A ring of cold stone, humming with power. Beyond it:", Coord_t{5, 4});
+    putString(info.about.substr(0, 74).c_str(), Coord_t{6, 4});
+    if (info.about.size() > 74) {
+        putString(info.about.substr(74, 74).c_str(), Coord_t{7, 4});
+    }
+    if (info.level_lo > 0) {
+        snprintf(line, sizeof(line), "For characters of level %d to %d.%s", info.level_lo, info.level_hi,
+                 info.floors > 1 ? (" It goes down " + std::to_string(info.floors) + " floors.").c_str() : "");
+        putString(line, Coord_t{9, 4});
+    }
+    putString(party.empty() ? "You stand alone. A raid grows with the party that enters it." : ("Your party: " + party).substr(0, 74).c_str(), Coord_t{10, 4});
+    if (info.wait > 0) {
+        snprintf(line, sizeof(line), "Your reward here is spent: the next in %dh %dm.", (int) (info.wait / 3600), (int) (info.wait % 3600 / 60));
+    } else {
+        snprintf(line, sizeof(line), "Its lord's death gives each of you a reward (once every %d hours).", MU_RAID_LOCKOUT_HOURS);
+    }
+    putString(line, Coord_t{12, 4});
+    putString("No stairs lead out: only this gate, a scroll, or death.", Coord_t{13, 4});
+    bool low = info.level_lo > 0 && py.misc.level < info.level_lo;
+    if (low) {
+        snprintf(line, sizeof(line), "You must be level %d to enter.", info.level_lo);
+        putString(line, Coord_t{16, 4});
+    } else {
+        putString(inside != nullptr ? "e) Join your party inside" : "e) Enter the raid", Coord_t{16, 4});
+    }
+    putString("ESC) Step back", Coord_t{17, 4});
+    char k = getKeyInput();
+    if (!low && (k == 'e' || k == 'E')) {
+        s->pending_dungeon = key;
+        dg.generate_new_level = true;
+    }
+    drawCavePanel();
+}
+
 void muRaidGate(int sub_category_id) {
     MuSession *s = mu_self;
     MuSafePrompt safe;
+    if (sub_category_id == DOWN || sub_category_id == UP) {
+        MuRaid *d = mu_dungeon_of(s->level);
+        if (d == nullptr) {
+            return;
+        }
+        int to = d->floor + (sub_category_id == DOWN ? 1 : -1);
+        MuDungeonInfo info;
+        if (to < 1 || !mu_script_dungeon_info(d->script, s, to, info)) {
+            printMessage("The stairs end in rubble.");
+            return;
+        }
+        std::string q = std::string(sub_category_id == DOWN ? "Go down to " : "Go back up to ") + info.floor_name + "?";
+        if (getInputConfirmation(q.c_str())) {
+            s->pending_dungeon = d->script;
+            s->pending_floor = to;
+            s->floor_from = sub_category_id == DOWN ? 1 : -1;
+            dg.generate_new_level = true;
+        }
+        return;
+    }
     if (sub_category_id == WAY_OUT && mu_dungeon_of(s->level) != nullptr) {
         if (getInputConfirmation(("Leave " + mu_dungeon_of(s->level)->title + "?").c_str())) {
             mu_dungeon_leave(s);

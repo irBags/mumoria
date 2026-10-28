@@ -68,6 +68,8 @@ struct MuSession {
     int dungeon_back_depth = 0;  // in a script dungeon: where its way out (and a reconnect) leads
     Coord_t dungeon_back{-1, -1};
     int last_step = -1;          // the square a dungeon's step event last fired for
+    int pending_floor = 0;       // by its stairs: that floor of pending_dungeon (0: in from outside)
+    int floor_from = 0;          // arriving by stairs: +1 came down (at the stairs up), -1 came up
     int store_in = -1;       // the store this player is shopping in (shops.cpp)
     Store_t store_view{};    // their own view of it, while someone else is loaded
     MuStoreTerms store_terms[MAX_STORES]{};

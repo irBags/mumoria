@@ -384,7 +384,11 @@ steps, and what stays compatible.
 * **Admin:** `/ban name days reason`, `/unban`, `/role name n`,
   `/broadcast text`, `/summon name`, `/inspect name`, `/save`,
   `/shutdown minutes`, `/resetlevel depth`, `/spawnboss` (an event: a boss,
-  awake, beside the admin), Umoria's wizard mode (`^W`).
+  awake, beside the admin), Umoria's wizard mode (`^W`),
+  `/givegold amount [name]` (or `name amount`): gold into that character's
+  purse, or the admin's own without a name; a character offline has it
+  waiting at the Auction House (a `claim`, collected there). Each is in
+  `audit`, and a gift to someone online in `ledger`.
 * **DB:** `audit(id, at, actor, action, target, detail)`.
 * **CLI:** `mumoria-server --create-admin NAME` sets up the first admin.
 
@@ -746,6 +750,58 @@ steps, and what stays compatible.
 * **Rewards** once per character per 12 hours per dungeon (`mu.reward_once`,
   kept in `script_state` as `reward:<key>:<name>`).
 
+### 2.26 Script raids, floors, decor and the inn
+
+* **Why:** more raids (Mike, 2026-10-27), easier ones for levels 1-5 and some
+  several floors deep, written in Lua; and an inn to hang out, drink and
+  sleep in. The game's own raids (2.20) stay as they are.
+* **Floors:** a script dungeon may have several (`floors =`), each its own
+  instance (`MuRaid::floor`) of one **run** (`MuRaid::run`, the first
+  floor's id). `world.cpp` deletes a run's floors together, once every one
+  has stood empty `MU_RAID_EMPTY_SECONDS`, so the way back up finds the
+  floor as it was left. Stairs are store doors 113 (down, `>`) and 114 (up,
+  `<`); stepping on one asks, then `pending_floor` and `floor_from` say
+  which floor and where to arrive (at the other end of the stairs). A
+  party member who comes in later joins the run's first floor.
+* **Generated floors:** `generate = true` keeps the level Umoria made at the
+  floor's depth (`raid.cpp mu_dungeon_generated`): no stairs or monsters,
+  a way in (or up), and stairs down as far from it as was found.
+* **`mu.raid`** (the prelude in `script.cpp`) fills a dungeon the way
+  `raid.cpp` fills a gate's raid: packs, captains (boss key
+  `<key>:captain`), a lord (`<key>:lord`) on the last floor with guard calls
+  at 75, 50 and 25 percent, scaled by the party, its loot, rewards once per
+  12 hours, the world told. Its **gate** is a store door 115 with the key in
+  the inscription (`mu.portal{gate = true}`), placed by the prelude when
+  someone arrives on its depth; `muScriptGate` (`raid.cpp`) draws the gate
+  screen from `mu._dungeon_info` and refuses characters below the raid's
+  levels.
+* **The raids** (`scripts/examples/6?_*.lua`, `7?_*.lua`): the Kobold Den
+  (levels 1-3, gate at 50 ft), the Old Crypt (2-5, 100 ft, drawn), the Snake
+  Pit (3-5, 150 ft); the Orc Stronghold (8-14, 350 ft, three floors), the
+  Sunken Temple (15-22, 600 ft, two), the Giants' Stair (18-28, 800 ft,
+  four). Each deep one ends on a drawn floor, has a custom item in its
+  reward, and none has a gate on a fifth level (those are the game's own).
+* **Decor:** a map letter can be furniture: rubble (`TV_RUBBLE`) with
+  sub-category `MU_DECOR` (200) on a blocked floor, its glyph the sprite,
+  its name in the inscription, its colour in `to_ac` (`loot.cpp` draws it).
+  It cannot be dug (`player_tunnel.cpp`); walking into it
+  (`player_move.cpp` `muDecorBump`) fires the dungeon's `bump`, else tells
+  its name. A wand of stone to mud still melts it, as rubble.
+* **Shared and safe:** `shared = true` makes one copy for everyone
+  (`MuRaid::shared`); `safe = true` refuses player fights there
+  (`social.cpp`). Map tile `=` is permanent rock (`TILE_BOUNDARY_WALL`).
+* **The inn** (`scripts/examples/80_inn.lua`): the script builds it in the
+  town's east margin (57-63 x 14-18, below the Auction House) with `mu.tile`
+  when someone arrives in the town, its door a portal, an amber `0`. Inside,
+  one shared, safe dungeon: the bar, tables, kegs, a hearth, a notice board
+  listing the raids, beds, a kitchen; an innkeeper, a bard, two patrons and
+  a cook (NPCs). Drinks (`mu.restore`, `mu.buff`) heal, bless or make a
+  hero, and enough of them confuse; `/sleep` beside a bed restores all,
+  cures and blesses; `/round` and `/toast` are for company.
+* **New calls:** `mu.restore`, `mu.buff`, `mu.creatures`, `mu.spot`,
+  `mu.decor`, `mu.here`, `mu.raid`, the `bump` handler, `mu.portal{gate=}`;
+  a player table has `mana` and `max_mana`, a level `floor` and `run`.
+
 ## 3. Menus: drawn the way Umoria draws
 
 There are no new windows. Bank, Guild Hall, Auction House and Trade are drawn
@@ -962,8 +1018,22 @@ of the following against the built server:
   the screen; `paplay` plays the files under WSLg. Not heard by a person
   yet; not tested: crit, fizzle, blast, heal, loot, the doors' close and
   bash, your_turn
-
-## 6. Not done yet
+* script raids, floors, the inn, `/givegold` (2.26), 2026-10-27, two bots
+  and test commands: `/givegold` to self, to another (either order), to
+  nobody (refused), by a player (ignored); the inn's door at 57,16, both
+  bots in the one inn with its five NPCs, told who was there, drinks, stew,
+  a round and a toast paid and told, confusion after enough, the
+  innkeeper's menu, a bed, `/sleep` to full, the notice board; the Kobold
+  Den's gate found at 50 ft, its screen, in, the Chief's guard at 75%, his
+  death and the reward, `/escape`; the Orc Stronghold down to floor 2, back
+  up to the same floor 1, a party member joining floor 1, down to the same
+  floor 2 and the drawn hall, the throne bumped, floor 1 kept for 70 s while
+  empty because the party was deeper, the War Chief's death; every floor of
+  every other raid built; no script errors. Found on the way: a `mu.boss`
+  of a depth also appeared inside script dungeons at that depth (Grashnak
+  in the Rat Sewer); the prelude now keeps them out. Not tested: real fights at the
+  raids' levels (balance), a run's floors deleted together, the inn from a
+  real client
 
 * The **IRC bridge** has not been run against a live IRC server.
 * **The AOL launch itself:** the token login is built. The P3OL side, a

@@ -615,6 +615,8 @@ static void pvp_attack(MuSession *s) {
         printMessage("There is nobody there.");
     } else if (s->level->depth == 0) {
         printMessage("The town watch will not have fighting here.");
+    } else if (mu_dungeon_of(s->level) != nullptr && mu_dungeon_of(s->level)->safe) {
+        printMessage("Not here: nobody fights in this place.");
     } else if (!s->pvp) {
         printMessage("You do not fight other players (/pvp on).");
     } else if (!t->pvp) {
@@ -1084,6 +1086,56 @@ static void move_beside(MuSession *t) {
     updateMonsters(false);
 }
 
+// Admin /givegold <amount> [name]: gold into the named character's purse, or
+// the admin's own. Someone offline has it waiting at the Auction House.
+static void give_gold(MuSession *s, std::string const &arg, std::string const &rest) {
+    std::string amount = arg, name = rest;
+    if (!arg.empty() && !isdigit((unsigned char) arg[0])) {
+        amount = rest; // /givegold name amount works too
+        name = arg;
+    }
+    long long gold = atoll(amount.c_str());
+    if (gold <= 0 || gold > 100000000) {
+        say(s, "Use: /givegold <amount> [name] (1 to 100000000; no name: to yourself)");
+        return;
+    }
+    MuSession *t = name.empty() ? s : online(name);
+    if (t != nullptr && t->in_game) {
+        int32_t given = 0;
+        mu_with_player(s, t, [&] {
+            given = (int32_t) std::min<long long>(gold, INT32_MAX - (long long) py.misc.au);
+            py.misc.au += given;
+            printCharacterGoldValue();
+            mu_char_store(t);
+        });
+        mu_db_ledger(t->account.id, t->char_name.c_str(), "givegold", given, "", s->char_name.c_str());
+        mu_db_audit(s->account.name, "givegold", t->char_name.c_str(), std::to_string(given).c_str());
+        if (t != s) {
+            say(t, s->char_name + " has given you " + std::to_string(given) + " gold.");
+            mu_conn_poke(t->conn);
+        }
+        say(s, (t == s ? std::string("You have ") : t->char_name + " has ") + std::to_string(given) + " more gold.");
+        return;
+    }
+    MuRows *r = mu_db_query("SELECT c.account, c.name FROM character c WHERE c.folded = lower(replace(?, ' ', '')) AND c.alive = 1", "s",
+                            name.c_str());
+    int64_t account = 0;
+    std::string who;
+    if (mu_db_next(r)) {
+        account = mu_db_col_int(r, 0);
+        who = mu_db_col_text(r, 1);
+    }
+    mu_db_done(r);
+    if (account == 0) {
+        say(s, "No such character.");
+        return;
+    }
+    mu_db_run("INSERT INTO claim (account, item, gold, reason, at) VALUES (?, '', ?, 'givegold', ?)", "iii", account, (int64_t) gold,
+              (int64_t) time(nullptr));
+    mu_db_audit(s->account.name, "givegold", who.c_str(), (std::to_string(gold) + " (offline)").c_str());
+    say(s, who + " is offline: " + std::to_string(gold) + " gold waits for them at the Auction House (collect).");
+}
+
 static bool moderate(MuSession *s, const std::string &cmd, const std::vector<std::string> &w) {
     int role = s->account.role;
     std::string arg = w.size() > 1 ? w[1] : "";
@@ -1232,6 +1284,8 @@ static bool moderate(MuSession *s, const std::string &cmd, const std::vector<std
     } else if (cmd == "spawnboss" && role >= 2) {
         say(s, mu_boss_spawn_beside(s->level) ? "A boss appears beside you." : "No boss here (not in the town, and only beside open floor).");
         mu_db_audit(s->account.name, "spawnboss", std::to_string(s->level->depth).c_str(), "");
+    } else if (cmd == "givegold" && role >= 2) {
+        give_gold(s, arg, rest);
     } else if (cmd == "resetlevel" && role >= 2) {
         int depth = atoi(arg.c_str());
         if (depth <= 0) {
@@ -1266,15 +1320,15 @@ static void help(MuSession *s) {
         "  /guild ...          create join leave invite kick promote demote",
         "                      motd rank shield turns members disband",
         "  /loot /legends /item a|worn  your finds, the latest great ones, an item",
-        "  Town buildings: 7 Bank, 8 Guild Hall, 9 Auction House",
-        "  Raids: a raid gate 0 on every fifth level (250 ft, 500 ft...); bring a party",
+        "  Town: 7 Bank, 8 Guild Hall, 9 Auction House, 0 the Inn (if its script runs)",
+        "  Raids: gates 0 at 250 ft, 500 ft... and the scripts' own; bring a party",
     };
     if (s->account.role >= 1) {
         lines.push_back("  Moderator: /kick /mute /goto /inspect");
     }
     if (s->account.role >= 2) {
         lines.push_back("  Admin: /ban /unban /role /broadcast /summon /spawnboss /raid [lord] /makeloot");
-        lines.push_back("         /makeitem [id] /items /reload /scripts /save /shutdown /resetlevel, ^W");
+        lines.push_back("         /makeitem /reload /scripts /save /shutdown /resetlevel /givegold, ^W");
     }
     std::string extra = mu_script_command_list();
     if (!extra.empty()) {

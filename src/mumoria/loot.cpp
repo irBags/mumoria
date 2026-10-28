@@ -19,6 +19,7 @@
 
 #include "items.h"
 #include "mu_config.h"
+#include "raid.h"
 #include "session.h"
 #include "social.h"
 
@@ -465,8 +466,11 @@ uint32_t mu_loot_tile_attr(Coord_t const &coord, char ch) {
         return 0;
     }
     Inventory_t const &item = game.treasure.list[id];
-    if (item.category_id == TV_STORE_DOOR && item.sub_category_id == 112 && item.sprite == (uint8_t) ch) {
-        return MU_ATTR_BOLD | MU_ATTR_FG(item.to_ac > 0 && item.to_ac < 256 ? item.to_ac : 199); // a script's portal
+    if (item.category_id == TV_STORE_DOOR && (item.sub_category_id == 112 || item.sub_category_id == MU_SCRIPT_GATE) && item.sprite == (uint8_t) ch) {
+        return MU_ATTR_BOLD | MU_ATTR_FG(item.to_ac > 0 && item.to_ac < 256 ? item.to_ac : 199); // a script's portal or raid gate
+    }
+    if (mu_is_decor(item) && item.sprite == (uint8_t) ch) {
+        return MU_ATTR_FG(item.to_ac > 0 && item.to_ac < 256 ? item.to_ac : 137); // a script's furniture
     }
     int tier = mu_rarity(item);
     if (tier == MU_COMMON || item.sprite != (uint8_t) ch) {

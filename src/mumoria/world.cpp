@@ -11,6 +11,7 @@
 #include "social.h"
 
 #include <map>
+#include <set>
 #include <pthread.h>
 #include <unistd.h>
 
@@ -588,10 +589,31 @@ static MuLevel *new_raid(int gate, int party) {
     return L;
 }
 
-// A new level drawn by the script dungeon `key`, for `party` players; null
-// if its script cannot make it.
-static MuLevel *new_dungeon(std::string const &key, int party) {
-    int depth = mu_script_dungeon_depth(key);
+// The open floor `floor` of the dungeon run `run`, or null.
+static MuLevel *dungeon_floor(int run, int floor) {
+    for (MuLevel *L : raids) {
+        if (L->raid->run == run && L->raid->floor == floor && !L->raid->script.empty()) {
+            return L;
+        }
+    }
+    return nullptr;
+}
+
+// The one copy of a shared dungeon (an inn) `key`, if it is open.
+static MuLevel *shared_dungeon(std::string const &key) {
+    for (MuLevel *L : raids) {
+        if (L->raid->shared && L->raid->script == key && L->raid->floor == 1) {
+            return L;
+        }
+    }
+    return nullptr;
+}
+
+// A new level drawn by the script dungeon `key` (its floor `floor`, of the
+// run `run`, 0 for a new run), for `party` players; null if its script
+// cannot make it.
+static MuLevel *new_dungeon(std::string const &key, int party, int floor, int run) {
+    int depth = mu_script_dungeon_depth(key, floor);
     if (depth < 1) {
         return nullptr;
     }
@@ -609,6 +631,8 @@ static MuLevel *new_dungeon(std::string const &key, int party) {
     L->raid->party = party;
     L->raid->script = key;
     L->raid->id = ++last_dungeon_id;
+    L->raid->floor = floor;
+    L->raid->run = run != 0 ? run : L->raid->id;
     loaded_level = L;
     if (!mu_script_dungeon_build(L)) {
         loaded_level = nullptr;
@@ -664,6 +688,11 @@ static void enter_level(MuSession *s, MuLevel *L) {
     Coord_t gate;
     if (L->raid != nullptr) {
         py.pos = L->raid->entry; // in through the gate
+        if (s->floor_from > 0 && L->raid->up.y > 0) {
+            py.pos = L->raid->up; // down the stairs: at the foot of them
+        } else if (s->floor_from < 0 && L->raid->down.y > 0) {
+            py.pos = L->raid->down;
+        }
     } else if (s->to_gate && mu_raid_find_gate(gate)) {
         py.pos = gate; // back out of a raid
         s->arrive_near = nullptr;
@@ -672,6 +701,7 @@ static void enter_level(MuSession *s, MuLevel *L) {
         s->arrive_near = nullptr;
     }
     s->to_gate = false;
+    s->floor_from = 0;
     s->arrive_at = Coord_t{-1, -1};
     s->last_step = -1;
     // below the town a party arrives together: beside a member already there.
@@ -755,18 +785,40 @@ void mu_change_level(MuSession *s) {
         return;
     }
     if (!s->pending_dungeon.empty()) {
-        // into a script's dungeon: the party's, or a new one for them
+        // into a script's dungeon: the party's, or a new one for them; by
+        // its stairs, to another floor of the same run
         std::string key = s->pending_dungeon;
+        int floor = s->pending_floor;
         s->pending_dungeon.clear();
-        if (mu_dungeon_of(s->level) == nullptr) {
+        s->pending_floor = 0;
+        MuRaid *here = mu_dungeon_of(s->level);
+        if (here == nullptr) {
             s->dungeon_back_depth = s->level->depth;
             s->dungeon_back = py.pos;
         }
-        int party = mu_raid_party_here(s);
-        MuLevel *inside = mu_dungeon_of_party(s, key);
+        int party = mu_raid_party_here(s), run = 0;
+        MuLevel *inside = nullptr;
+        if (floor > 0 && here != nullptr && here->script == key) {
+            run = here->run;
+            party = here->party;
+        } else {
+            floor = 1;
+            s->floor_from = 0;
+            MuLevel *theirs = shared_dungeon(key);
+            if (theirs == nullptr) {
+                theirs = mu_dungeon_of_party(s, key);
+            }
+            if (theirs != nullptr) {
+                run = theirs->raid->run; // the party's: in at its first floor
+                party = theirs->raid->party;
+            }
+        }
+        if (run != 0) {
+            inside = dungeon_floor(run, floor);
+        }
         dg.current_level = (int16_t) s->level->depth;
         leave_level(s);
-        MuLevel *L = inside != nullptr ? inside : new_dungeon(key, party);
+        MuLevel *L = inside != nullptr ? inside : new_dungeon(key, party, floor, run);
         if (L == nullptr) {
             s->arrive_at = s->dungeon_back; // the script failed: back where they were
             mu_enter_game(s, s->dungeon_back_depth);
@@ -796,14 +848,24 @@ void mu_leave_game(MuSession *s) {
 
 void mu_world_maintain(bool force_all) {
     time_t now = time(nullptr);
+    // a dungeon's floors go together, once all of them have stood empty
+    auto done = [&](MuLevel const *L) { return L->players.empty() && L->empty_since != 0 && now - L->empty_since >= MU_RAID_EMPTY_SECONDS; };
+    std::set<int> busy_runs;
+    for (MuLevel *L : raids) {
+        if (L->raid->run != 0 && !done(L)) {
+            busy_runs.insert(L->raid->run);
+        }
+    }
     for (auto it = raids.begin(); it != raids.end();) {
         MuLevel *L = *it;
-        if (L->players.empty() && L->empty_since != 0 && now - L->empty_since >= MU_RAID_EMPTY_SECONDS) {
+        if (done(L) && busy_runs.count(L->raid->run) == 0) {
             if (L == loaded_level) {
                 loaded_level = nullptr;
             }
             if (mu_dungeon_of(L) != nullptr) {
-                mu_script_dungeon_gone(L->raid->id);
+                int run = L->raid->run;
+                bool last = std::count_if(raids.begin(), raids.end(), [&](MuLevel const *o) { return o->raid->run == run; }) == 1;
+                mu_script_dungeon_gone(L->raid->id, last);
             }
             delete L->raid;
             delete L;

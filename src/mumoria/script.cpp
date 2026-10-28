@@ -224,6 +224,8 @@ void push_player(lua_State *l, MuSession *p) {
     set_int(l, "hp", P.misc.current_hp);
     set_int(l, "max_hp", P.misc.max_hp);
     set_int(l, "gold", P.misc.au);
+    set_int(l, "mana", P.misc.current_mana);
+    set_int(l, "max_mana", P.misc.mana);
     set_bool(l, "admin", p->account.role >= 2);
     set_bool(l, "in_party", p->party != nullptr);
 }
@@ -630,7 +632,7 @@ bool find_portal(std::string const &key, Coord_t &out) {
     for (int y = 0; y < dg.height; y++) {
         for (int x = 0; x < dg.width; x++) {
             int id = dg.floor[y][x].treasure_id;
-            if (id != 0 && game.treasure.list[id].category_id == TV_STORE_DOOR && game.treasure.list[id].sub_category_id == PORTAL &&
+            if (id != 0 && game.treasure.list[id].category_id == TV_STORE_DOOR && (game.treasure.list[id].sub_category_id == PORTAL || game.treasure.list[id].sub_category_id == MU_SCRIPT_GATE) &&
                 key == game.treasure.list[id].inscription) {
                 out = Coord_t{y, x};
                 return true;
@@ -674,7 +676,8 @@ void push_place(lua_State *l, Coord_t const &c) {
     set_int(l, "y", c.y);
 }
 
-// mu.portal{key=, at=, glyph=, colour=}: its place (nil if no room)
+// mu.portal{key=, at=, glyph=, colour=, gate=}: its place (nil if no room).
+// gate=true: a raid gate (store door 115) for the dungeon `key` instead
 int l_portal(lua_State *l) {
     need_world(l);
     luaL_checktype(l, 1, LUA_TTABLE);
@@ -702,7 +705,7 @@ int l_portal(lua_State *l) {
     int id = popt();
     Inventory_t &door = game.treasure.list[id];
     inventoryItemCopyTo(config::dungeon::objects::OBJ_STORE_DOOR, door);
-    door.sub_category_id = PORTAL;
+    door.sub_category_id = bool_field(l, 1, "gate", false) ? MU_SCRIPT_GATE : PORTAL;
     door.sprite = (uint8_t) (glyph.empty() ? '0' : glyph[0]);
     door.to_ac = (int16_t) colour;
     snprintf(door.inscription, sizeof(door.inscription), "%s", key.c_str());
@@ -952,6 +955,9 @@ void draw_tile(Coord_t c, char ch) {
         case '%':
             t.feature_id = TILE_MAGMA_WALL;
             break;
+        case '=':
+            t.feature_id = TILE_BOUNDARY_WALL; // permanent: nothing digs it
+            break;
         case ',':
             t.feature_id = TILE_CORR_FLOOR;
             break;
@@ -1000,9 +1006,10 @@ void light_walls() {
     }
 }
 
-// mu._draw(map, tiles): draws the dungeon being built from `map` (rows of
-// text). tiles = {letter = tile} for letters not drawn as lit floor. Returns
-// {letter = {places}} for every letter and digit, '@' and '<'.
+// mu._draw(map, tiles, decor): draws the dungeon being built from `map`
+// (rows of text). tiles = {letter = tile} for letters not drawn as lit floor;
+// decor = {letter = {glyph, name, colour}} for its furniture. Returns
+// {letter = {places}} for every letter and digit, '@', '<' and '>'.
 int l_draw(lua_State *l) {
     MuRaid *d = mu_dungeon_of(mu_level_loaded());
     if (d == nullptr || !d->marks.empty()) {
@@ -1010,6 +1017,7 @@ int l_draw(lua_State *l) {
     }
     std::string map = luaL_checkstring(l, 1);
     luaL_checktype(l, 2, LUA_TTABLE);
+    bool has_decor = lua_istable(l, 3);
     std::vector<std::string> rows;
     size_t start = map.empty() || map[0] != '\n' ? 0 : 1;
     while (start <= map.size()) {
@@ -1052,13 +1060,13 @@ int l_draw(lua_State *l) {
 
     d->marks.assign((size_t) MAX_HEIGHT * MAX_WIDTH, 0);
     std::map<char, std::vector<Coord_t>> places;
-    std::vector<Coord_t> exits;
+    std::vector<Coord_t> exits, downs;
     for (size_t r = 0; r < rows.size(); r++) {
         for (size_t c = 0; c < rows[r].size(); c++) {
             char ch = rows[r][c];
             Coord_t at{(int32_t) r + 1, (int32_t) c + 1};
             char tile = ch;
-            if (isalnum((unsigned char) ch) || ch == '@' || ch == '<') {
+            if (isalnum((unsigned char) ch) || ch == '@' || ch == '<' || ch == '>') {
                 places[ch].push_back(at);
                 tile = '.'; // the floor around it: dark if any beside it is
                 for (int k = 0; k < 4; k++) {
@@ -1078,8 +1086,21 @@ int l_draw(lua_State *l) {
                 if (ch == '<') {
                     exits.push_back(at);
                 }
+                if (ch == '>') {
+                    downs.push_back(at);
+                }
             }
             draw_tile(at, tile);
+            lua_pushlstring(l, &ch, 1);
+            if (has_decor && isalnum((unsigned char) ch) && lua_gettable(l, 3) == LUA_TTABLE) {
+                lua_rawgeti(l, -1, 1);
+                lua_rawgeti(l, -2, 2);
+                lua_rawgeti(l, -3, 3);
+                const char *glyph = lua_tostring(l, -3), *name = lua_tostring(l, -2);
+                mu_place_decor(at, glyph != nullptr && glyph[0] != 0 ? glyph[0] : '#', name != nullptr ? name : "", (int) lua_tointeger(l, -1));
+                lua_pop(l, 3);
+            }
+            lua_pop(l, 1);
         }
     }
     if (places['@'].empty()) {
@@ -1087,8 +1108,17 @@ int l_draw(lua_State *l) {
     }
     d->entry = places['@'][0];
     for (Coord_t const &c : exits) {
-        mu_dungeon_place_exit(c);
+        if (d->floor > 1) {
+            mu_dungeon_place_stairs(c, false); // up to the floor above
+        } else {
+            mu_dungeon_place_exit(c);
+        }
     }
+    for (Coord_t const &c : downs) {
+        mu_dungeon_place_stairs(c, true);
+    }
+    d->up = exits.empty() ? d->entry : exits[0];
+    d->down = downs.empty() ? Coord_t{0, 0} : downs[0];
     light_walls();
 
     lua_newtable(l);
@@ -1111,7 +1141,7 @@ int l_tile(lua_State *l) {
     Coord_t at = coord_arg(l, 1);
     std::string tile = luaL_checkstring(l, 2);
     char ch = tile.empty() ? '.' : tile[0];
-    bool solid = ch == '#' || ch == ' ' || ch == '%' || ch == '+' || ch == '&' || ch == '$' || ch == ':';
+    bool solid = ch == '#' || ch == ' ' || ch == '%' || ch == '=' || ch == '+' || ch == '&' || ch == '$' || ch == ':';
     if (solid && (dg.floor[at.y][at.x].creature_id != 0 || muOtherPlayerAt(at))) {
         lua_pushboolean(l, 0);
         return 1;
@@ -1126,6 +1156,169 @@ int l_tile(lua_State *l) {
     mu_level_loaded()->dirty = true;
     lua_pushboolean(l, 1);
     return 1;
+}
+
+// mu._generate(down): the dungeon floor being built is the level Umoria
+// made at its depth, without its stairs or monsters; a way in, and stairs
+// down (if `down`) as far from it as can be found. Its places, as _draw's.
+int l_generate(lua_State *l) {
+    MuRaid *d = mu_dungeon_of(mu_level_loaded());
+    if (d == nullptr || !d->marks.empty()) {
+        return luaL_error(l, "mu._generate: only while a dungeon is built");
+    }
+    mu_dungeon_generated(d, lua_toboolean(l, 1) != 0);
+    lua_newtable(l);
+    std::pair<const char *, Coord_t> places[] = {{"@", d->entry}, {"<", d->up}, {">", d->down}};
+    for (auto const &p : places) {
+        if (p.second.y > 0) {
+            lua_newtable(l);
+            push_place(l, p.second);
+            lua_rawseti(l, -2, 1);
+            lua_setfield(l, -2, p.first);
+        }
+    }
+    return 1;
+}
+
+// mu.creatures{letters=, min=, max=}: the names of the creatures drawn as
+// those letters, of those levels (none that win the game)
+int l_creatures(lua_State *l) {
+    luaL_checktype(l, 1, LUA_TTABLE);
+    std::string letters = str_field(l, 1, "letters", "");
+    int lo = int_field(l, 1, "min", 1), hi = int_field(l, 1, "max", 100);
+    lua_newtable(l);
+    int n = 0;
+    for (int i = 0; i < MON_MAX_CREATURES; i++) {
+        Creature_t const &c = creatures_list[i];
+        if (c.level >= lo && c.level <= hi && c.level > 0 && (letters.empty() || letters.find((char) c.sprite) != std::string::npos) &&
+            (c.movement & config::monsters::move::CM_WIN) == 0) {
+            lua_pushstring(l, c.name);
+            lua_rawseti(l, -2, ++n);
+        }
+    }
+    return 1;
+}
+
+// mu.spot{from=, near=, far=} / mu.spot{from=, farthest=true}: a free open
+// square (no wall, monster, item or player) between near and far squares
+// from `from` (the event's player if none), or the farthest found; nil if none
+int l_spot(lua_State *l) {
+    need_world(l);
+    luaL_checktype(l, 1, LUA_TTABLE);
+    Coord_t from = py.pos;
+    lua_getfield(l, 1, "from");
+    if (!lua_isnil(l, -1)) {
+        from = coord_arg(l, lua_gettop(l));
+    }
+    lua_pop(l, 1);
+    Coord_t at;
+    if (bool_field(l, 1, "farthest", false)) {
+        at = mu_raid_farthest(from);
+    } else if (!mu_raid_spot(from, int_field(l, 1, "near", 0), int_field(l, 1, "far", 1000), at)) {
+        lua_pushnil(l);
+        return 1;
+    }
+    push_place(l, at);
+    return 1;
+}
+
+// mu.decor(place, glyph, name, colour): furniture there (a table, a bed):
+// it blocks the way and cannot be dug; walking into it is a dungeon's bump
+int l_decor(lua_State *l) {
+    need_world(l);
+    Coord_t at = coord_arg(l, 1);
+    std::string glyph = luaL_checkstring(l, 2);
+    if (dg.floor[at.y][at.x].creature_id != 0 || muOtherPlayerAt(at)) {
+        lua_pushboolean(l, 0);
+        return 1;
+    }
+    mu_place_decor(at, glyph.empty() ? '#' : glyph[0], luaL_optstring(l, 3, ""), (int) luaL_optinteger(l, 4, 0));
+    dg.floor[at.y][at.x].perma_lit_room = true;
+    dg.floor[at.y][at.x].field_mark = true;
+    dungeonLiteSpot(at);
+    mu_level_loaded()->dirty = true;
+    lua_pushboolean(l, 1);
+    return 1;
+}
+
+// mu.restore(player, {hp=, mana=, food=, cure=}): hit points and mana back
+// (a number, or "full"), fed ("full", never bloated), cured (poison,
+// confusion, blindness, fear)
+int l_restore(lua_State *l) {
+    need_world(l);
+    MuSession *p = player_arg(l, 1);
+    luaL_checktype(l, 2, LUA_TTABLE);
+    auto amount = [&](const char *k, int full) {
+        lua_getfield(l, 2, k);
+        int v = lua_isnil(l, -1) ? 0 : lua_type(l, -1) == LUA_TSTRING && std::string(lua_tostring(l, -1)) == "full" ? full : (int) luaL_checkinteger(l, -1);
+        lua_pop(l, 1);
+        return v;
+    };
+    bool cure = bool_field(l, 2, "cure", false);
+    mu_with_player(mu_self, p, [&] {
+        int hp = amount("hp", py.misc.max_hp - py.misc.current_hp);
+        if (hp > 0) {
+            (void) spellChangePlayerHitPoints(hp);
+        }
+        int mana = amount("mana", py.misc.mana - py.misc.current_mana);
+        if (mana > 0 && py.misc.current_mana < py.misc.mana) {
+            py.misc.current_mana = (int16_t) std::min<int>(py.misc.mana, py.misc.current_mana + mana);
+            py.misc.current_mana_fraction = 0;
+            printCharacterCurrentMana();
+        }
+        int food = amount("food", config::player::PLAYER_FOOD_FULL - py.flags.food);
+        food = std::min(food, config::player::PLAYER_FOOD_FULL - std::max<int>(0, py.flags.food));
+        if (food > 0) {
+            playerIngestFood(food);
+        }
+        if (cure) {
+            (void) playerCurePoison();
+            (void) playerCureConfusion();
+            (void) playerCureBlindness();
+            (void) playerRemoveFear();
+        }
+    });
+    if (p != mu_self) {
+        mu_conn_poke(p->conn);
+    }
+    return 0;
+}
+
+// mu.buff(player, what, turns): a timed effect, as a potion's: hero, bless,
+// speed, slow, confused, poisoned, afraid, see_invisible, infravision,
+// resist_fire, resist_cold. Adds to what they have.
+int l_buff(lua_State *l) {
+    need_world(l);
+    MuSession *p = player_arg(l, 1);
+    std::string what = luaL_checkstring(l, 2);
+    int turns = (int) luaL_checkinteger(l, 3);
+    bool known = true;
+    mu_with_player(mu_self, p, [&] {
+        int16_t *f = what == "hero"            ? &py.flags.heroism
+                     : what == "bless"         ? &py.flags.blessed
+                     : what == "speed"         ? &py.flags.fast
+                     : what == "slow"          ? &py.flags.slow
+                     : what == "confused"      ? &py.flags.confused
+                     : what == "poisoned"      ? &py.flags.poisoned
+                     : what == "afraid"        ? &py.flags.afraid
+                     : what == "see_invisible" ? &py.flags.detect_invisible
+                     : what == "infravision"   ? &py.flags.timed_infra
+                     : what == "resist_fire"   ? &py.flags.heat_resistance
+                     : what == "resist_cold"   ? &py.flags.cold_resistance
+                                               : nullptr;
+        if (f == nullptr) {
+            known = false;
+            return;
+        }
+        *f = (int16_t) std::max(0, std::min(30000, *f + turns));
+    });
+    if (!known) {
+        return luaL_error(l, "mu.buff: no effect '%s'", what.c_str());
+    }
+    if (p != mu_self) {
+        mu_conn_poke(p->conn);
+    }
+    return 0;
 }
 
 // mu.enter_dungeon(player, key): the player in the event goes into that
@@ -1382,6 +1575,7 @@ const luaL_Reg MU[] = {
     {"items", l_items},       {"take", l_take},     {"walk", l_walk},           {"hold", l_hold},           {"town_expiry", l_town_expiry},
     {"npc", l_npc},           {"letter", l_letter}, {"_draw", l_draw},    {"tile", l_tile},           {"enter_dungeon", l_enter_dungeon},
     {"leave_dungeon", l_leave_dungeon}, {"level", l_level}, {"pay", l_pay},
+    {"_generate", l_generate}, {"creatures", l_creatures}, {"spot", l_spot}, {"decor", l_decor}, {"restore", l_restore}, {"buff", l_buff},
     {"give", l_give},         {"teleport", l_teleport}, {"player", l_player}, {"players", l_players},     {"glow", l_glow},           {"random", l_random},
     {"now", l_now},           {"depth", l_depth},   {"log", l_log},             {"set", l_set},             {"get", l_get},
     {"_error", l_error},      {"_boss_key", l_boss_key}, {nullptr, nullptr},
@@ -1464,7 +1658,7 @@ end
 
 mu.on("enter", function(p, level)
   for key, b in pairs(bosses) do
-    if level.depth == b.depth and not level.raid then
+    if level.depth == b.depth and not level.raid and not level.dungeon then
       local m = mu.find_boss(key)
       if not m and due(b) then
         m = mu.spawn{creature = b.creature, far = true, hp = b.hp or 5, speed = b.speed or 1, boss = key}
@@ -1509,46 +1703,82 @@ mu.on("kill", function(p, m)
 end)
 
 -- mu.dungeon{key=, name=, label=, depth=, level=, about=, map=, legend=,
---            build=, enter=, step=, talk=, hurt=, kill=, tick=}
--- (scripts/README.md, "Dungeons"). Each copy's state table `d` is passed to
--- the handlers: d.key, d.id, d.party, d.places, d.flags.
-local dungeons, order, state = {}, {}, {}
+--            floors={{name=, label=, depth=, map=, legend=, generate=, build=}},
+--            shared=, safe=, hidden=,
+--            build=, enter=, step=, bump=, talk=, hurt=, kill=, tick=}
+-- (scripts/README.md, "Dungeons"). Each floor's state table `d` is passed
+-- to the handlers: d.key, d.id, d.party, d.floor, d.places, and d.flags
+-- (one table for all the floors a party has open).
+local dungeons, order, state, runs = {}, {}, {}, {}
 
 function mu.dungeon(d)
-  assert(type(d.key) == "string" and type(d.map) == "string", "mu.dungeon needs a key and a map")
+  assert(type(d.key) == "string", "mu.dungeon needs a key")
+  if not d.floors then
+    assert(type(d.map) == "string", "mu.dungeon " .. d.key .. " needs a map (or floors)")
+    d.floors = {{map = d.map, legend = d.legend, depth = d.depth}}
+  end
+  assert(#d.floors >= 1, "mu.dungeon " .. d.key .. ": no floors")
+  for i, f in ipairs(d.floors) do
+    assert(type(f.map) == "string" or f.generate, "mu.dungeon " .. d.key .. ": floor " .. i .. " needs a map or generate = true")
+  end
   d.name = d.name or d.key
   d.label = d.label or (d.name:gsub("^the ", ""))
-  d.depth = d.depth or 1
+  d.depth = d.depth or d.floors[1].depth or 1
   if not dungeons[d.key] then order[#order + 1] = d.key end
   dungeons[d.key] = d
 end
 
--- every dungeon, in the order they were made: {key, name, level, about, depth}
+-- every dungeon, in the order they were made: {key, name, level, about,
+-- depth, floors, kind, gate} (not those made with hidden = true)
 function mu.dungeons()
   local out = {}
   for _, k in ipairs(order) do
     local d = dungeons[k]
-    out[#out + 1] = {key = k, name = d.name, level = d.level, about = d.about, depth = d.depth}
+    if not d.hidden then
+      out[#out + 1] = {key = k, name = d.name, level = d.level, about = d.about, depth = d.depth,
+                       floors = #d.floors, kind = d.kind or "dungeon", gate = d.gate}
+    end
   end
   return out
 end
 
-function mu._dungeon_depth(key)
-  local d = dungeons[key]
-  return d and d.depth or -1
+local function floor_depth(d, n)
+  local f = d.floors[n]
+  return f and (f.depth or d.depth + n - 1)
 end
 
-function mu._dungeon_build(key, id, party)
+local function floor_name(d, n)
+  local f = d.floors[n]
+  return f.name or (n == 1 and d.name) or ("floor " .. n)
+end
+
+function mu._dungeon_depth(key, n)
   local d = dungeons[key]
-  local tiles = {}
-  for ch, v in pairs(d.legend or {}) do
-    local t = type(v) == "string" and v or (type(v) == "table" and v.tile)
-    if t then tiles[ch] = t end
+  return d and floor_depth(d, n or 1) or -1
+end
+
+function mu._dungeon_build(key, id, party, n, run)
+  local d = dungeons[key]
+  local f = d.floors[n]
+  local legend = f.legend or d.legend or {}
+  local tiles, decor = {}, {}
+  for ch, v in pairs(legend) do
+    if type(v) == "string" then
+      tiles[ch] = v
+    elseif type(v) == "table" then
+      if v.tile then tiles[ch] = v.tile end
+      if v.decor then decor[ch] = {v.decor, v.name or "", v.colour or 0} end
+    end
   end
-  local st = {key = key, id = id, party = party, name = d.name, flags = {}}
-  st.places = mu._draw(d.map, tiles)
+  runs[run] = runs[run] or {}
+  local st = {key = key, id = id, party = party, floor = n, run = run, name = floor_name(d, n), flags = runs[run]}
+  if f.generate then
+    st.places = mu._generate(n < #d.floors)
+  else
+    st.places = mu._draw(f.map, tiles, decor)
+  end
   state[id] = st
-  for ch, v in pairs(d.legend or {}) do
+  for ch, v in pairs(legend) do
     if type(v) == "table" then
       for _, at in ipairs(st.places[ch] or {}) do
         if v.spawn then
@@ -1561,20 +1791,45 @@ function mu._dungeon_build(key, id, party)
       end
     end
   end
+  if f.build then f.build(st) end
   if d.build then d.build(st) end
-  return d.name, d.label
+  local title, label = d.name, d.label
+  if #d.floors > 1 then
+    title = n == 1 and d.name or (d.name .. ", " .. floor_name(d, n))
+    label = f.label or (d.label .. " " .. n)
+  end
+  return title, label, d.shared == true, d.safe == true
 end
 
--- the dungeon of a level (the event's if none given) and its copy's state
+-- what a gate or the stairs show: nil if there is no such dungeon or floor
+function mu._dungeon_info(key, p, n)
+  local d = dungeons[key]
+  if not (d and d.floors[n]) then return nil end
+  local last = tonumber(mu.get("reward:" .. key .. ":" .. p.name) or "0")
+  local wait = math.max(0, (d.reward_hours or 12) * 3600 - (mu.now() - last))
+  return {name = d.name, about = d.about or "", floor_name = floor_name(d, n), floors = #d.floors, wait = wait,
+          level_lo = d.level and d.level[1] or 0, level_hi = d.level and d.level[2] or 0}
+end
+
+-- the dungeon of a level (the event's if none given) and its floor's state
 local function here(level)
   level = level or mu.level()
   if not (level and level.dungeon) then return nil end
   local st = state[level.id]
   if not st then -- the scripts were reloaded inside it: what it knew is lost
-    st = {key = level.dungeon, id = level.id, party = level.party, places = {}, flags = {}}
+    runs[level.run] = runs[level.run] or {}
+    st = {key = level.dungeon, id = level.id, party = level.party, floor = level.floor, run = level.run,
+          places = {}, flags = runs[level.run]}
     state[level.id] = st
   end
   return dungeons[level.dungeon], st
+end
+
+-- the table `d` the dungeon's handlers get, for the event's level (nil
+-- outside a dungeon): for commands, which are not given it
+function mu.here()
+  local _, st = here()
+  return st
 end
 
 mu.on("enter", function(p, level)
@@ -1593,7 +1848,19 @@ function mu._step(p, level, letter, place)
   if d and d.step then d.step(p, st, letter, place) end
 end
 
-function mu._gone(id) state[id] = nil end
+-- walking into decor: true if the dungeon's bump handler took it (it
+-- returns anything but false)
+function mu._bump(p, level, letter, place)
+  local d, st = here(level)
+  if d and d.bump then return d.bump(p, st, letter, place) ~= false end
+  return false
+end
+
+function mu._gone(id, run_gone)
+  local st = state[id]
+  if st and run_gone then runs[st.run] = nil end
+  state[id] = nil
+end
 
 dungeon_tick = function(p, level)
   local d, st = here(level)
@@ -1653,6 +1920,150 @@ function mu.phases(m, phases)
     phases[n].run(m)
   end
 end
+
+-- mu.raid{key=, name=, label=, level={lo, hi}, about=, gate=, colour=,
+--         floors={{depth=, name=, label=, map=, legend=, generate=,
+--                  mobs=, packs=, pack={lo, hi}, captains=, captain={creature=, name=, hp=}}},
+--         lord={creature=, name=, hp=, speed=, guard=, at=, phases=},
+--         loot={tier=, count=}, reward={tier=, gold=, items=},
+--         build=, enter=, step=, bump=, talk=, hurt=, kill=, tick=}
+-- A raid is a dungeon (scripts/README.md, "Raids") filled the way the
+-- game's own raids are: packs everywhere but the way in, captains, and a
+-- lord who calls its guard as it weakens; all of it grows with the party.
+local raids = {}
+
+local function pick(list) return list[mu.random(#list)] end
+
+-- a list of creature names, or {letters=, min=, max=} for mu.creatures
+local function creature_list(m)
+  if not m then return {} end
+  if m.letters then return mu.creatures(m) end
+  return m
+end
+
+function mu.raid(r)
+  assert(type(r.key) == "string" and #r.key <= 11, "mu.raid needs a key of 1 to 11 letters")
+  assert(type(r.floors) == "table" and #r.floors >= 1, "mu.raid " .. r.key .. " needs floors")
+  assert(r.lord and r.lord.creature, "mu.raid " .. r.key .. " needs a lord")
+  raids[r.key] = r
+  local lord_key, captain_key = r.key .. ":lord", r.key .. ":captain"
+  local loot, reward = r.loot or {}, r.reward or {}
+  local title = r.label or (r.name or r.key):gsub("^the ", "")
+
+  local function lord_phases(st)
+    if r.lord.phases then return r.lord.phases end
+    local guard = creature_list(r.lord.guard)
+    local out = {}
+    for i, at in ipairs({75, 50, 25}) do
+      out[i] = {at = at, run = function(m)
+        mu.say_level("[Raid] " .. m.name .. " roars, and its guard rushes in!")
+        if #guard > 0 then
+          for _ = 1, 2 + st.party do mu.spawn{creature = pick(guard), near = m, awake = true} end
+        end
+      end}
+    end
+    return out
+  end
+
+  local d = {key = r.key, name = r.name, label = r.label, level = r.level, about = r.about, floors = r.floors,
+             kind = "raid", gate = r.gate, reward_hours = reward.hours,
+             step = r.step, bump = r.bump, talk = r.talk, tick = r.tick, every = r.every}
+
+  d.build = function(st)
+    local f = r.floors[st.floor]
+    local n = st.party
+    local entry = st.places["@"][1]
+    local mobs = creature_list(f.mobs)
+    local hp = 1 + 0.2 * (n - 1) -- a little tougher for each member after the first
+    if #mobs > 0 then
+      local packs = (f.packs or 8) + (f.packs or 8) * (n - 1) // 3
+      local lo, hi = (f.pack or {})[1] or 3, (f.pack or {})[2] or 5
+      for _ = 1, packs do
+        local at = mu.spot{from = entry, near = 10}
+        if at then
+          for _ = 1, lo + mu.random(hi - lo + 1) - 1 do
+            mu.spawn{creature = pick(mobs), near = at, awake = false, hp = hp}
+          end
+        end
+      end
+    end
+    for _ = 1, f.captains or 0 do
+      local c = f.captain or {}
+      local at = mu.spot{from = entry, near = 20}
+      if at then
+        local m = mu.spawn{creature = c.creature or pick(mobs), name = c.name, at = at, boss = captain_key,
+                           hp = (c.hp or 3) + n - 1, awake = false}
+        if m and #mobs > 0 then
+          for _ = 1, 2 + n // 2 do mu.spawn{creature = pick(mobs), near = m, awake = false, hp = hp} end
+        end
+      end
+    end
+    if st.floor == #r.floors then
+      local at = r.lord.at and st.places[r.lord.at] and st.places[r.lord.at][1] or mu.spot{from = entry, farthest = true}
+      local lord = mu.spawn{creature = r.lord.creature, name = r.lord.name, at = at, boss = lord_key, awake = false,
+                            hp = (r.lord.hp or 6) * (1 + 0.5 * (n - 1)), speed = r.lord.speed or 0}
+      local guard = creature_list(r.lord.guard)
+      if lord and #guard > 0 then
+        for _ = 1, 3 + n do mu.spawn{creature = pick(guard), near = lord, awake = false, hp = hp} end
+      end
+    end
+    if r.build then r.build(st) end
+  end
+
+  d.enter = function(p, st)
+    local f = r.floors[st.floor]
+    if st.flags.won then
+      mu.tell(p, "[Raid] " .. (r.name or r.key) .. ": its lord is dead.")
+    elseif st.floor == 1 then
+      mu.tell(p, "[Raid] You are in " .. (r.name or r.key) .. "." .. (#r.floors > 1 and
+        (" It goes down " .. #r.floors .. " floors; " .. (r.lord.name or r.lord.creature) .. " waits at the bottom.") or
+        (" Deep within waits " .. (r.lord.name or r.lord.creature) .. ", its lord.")))
+    elseif f.name then
+      mu.tell(p, "[Raid] " .. f.name:gsub("^%l", string.upper) .. ".")
+    end
+    if r.enter then r.enter(p, st) end
+  end
+
+  d.hurt = function(p, m, st)
+    if m.boss == lord_key then
+      st.lord_phases = st.lord_phases or lord_phases(st)
+      mu.phases(m, st.lord_phases)
+    end
+    if r.hurt then r.hurt(p, m, st) end
+  end
+
+  d.kill = function(p, m, st)
+    if m.boss == captain_key then
+      for _ = 1, (r.captain_loot or {}).count or 2 do mu.drop((r.captain_loot or {}).tier or "uncommon", m) end
+      mu.say_level("[Raid] " .. p.name .. " has slain a captain, " .. m.name .. ". Its hoard spills out!")
+    elseif m.boss == lord_key then
+      st.flags.won = true
+      for _ = 1, (loot.count or 3) + st.party - 1 do mu.drop(loot.tier or "rare", m) end
+      mu.say_level("[Raid] " .. m.name .. " is dead! Its treasure spills across the floor; each of you has a reward of your own.")
+      mu.say_world(p.name .. (st.party > 1 and "'s party has" or " has") .. " conquered " .. (r.name or r.key) .. "!")
+      mu.reward_party{key = r.key, title = title, tier = reward.tier or "rare", gold = reward.gold, items = reward.items,
+                      hours = reward.hours}
+      mu.say_level("[Raid] The way out (0) is where you came in" .. (#r.floors > 1 and ", up the stairs" or "") ..
+                   "; /escape takes you there at once.")
+    end
+    if r.kill then r.kill(p, m, st) end
+  end
+
+  mu.dungeon(d)
+end
+
+-- a raid's gate stands on its level (gate = the depth; 0 the town)
+mu.on("enter", function(p, level)
+  if level.dungeon or level.raid then return end
+  for key, r in pairs(raids) do
+    if r.gate == level.depth then mu.portal{key = key, gate = true, colour = r.colour or 45} end
+  end
+end)
+
+-- out of a dungeon or raid, to where you came in from
+mu.command("escape", function(p)
+  if not mu.leave_dungeon(p) then mu.tell(p, "You are not in a dungeon.") end
+end, "out of the dungeon or raid you are in, to where you came in from")
 )LUA";
 
 void open_state() {
@@ -1775,6 +2186,8 @@ void push_level(MuLevel *level) {
         set_str(L, "dungeon", d->script);
         set_int(L, "id", d->id);
         set_int(L, "party", d->party);
+        set_int(L, "floor", d->floor);
+        set_int(L, "run", d->run);
     } else if (mu_raid_title(level) != nullptr) {
         set_str(L, "raid", mu_raid_title(level));
     }
@@ -1834,12 +2247,13 @@ bool muMonsterTalk(int creature_id) {
     return true;
 }
 
-int mu_script_dungeon_depth(std::string const &key) {
+int mu_script_dungeon_depth(std::string const &key, int floor) {
     if (!get_mu("_dungeon_depth")) {
         return -1;
     }
     lua_pushstring(L, key.c_str());
-    if (!call(1, 1)) {
+    lua_pushinteger(L, floor);
+    if (!call(2, 1)) {
         return -1;
     }
     int depth = (int) lua_tointeger(L, -1);
@@ -1855,12 +2269,16 @@ bool mu_script_dungeon_build(MuLevel *level) {
     lua_pushstring(L, d->script.c_str());
     lua_pushinteger(L, d->id);
     lua_pushinteger(L, d->party);
-    if (!call(3, 2)) {
+    lua_pushinteger(L, d->floor);
+    lua_pushinteger(L, d->run);
+    if (!call(5, 4)) {
         return false;
     }
-    d->title = lua_tostring(L, -2) != nullptr ? lua_tostring(L, -2) : d->script;
-    d->label = lua_tostring(L, -1) != nullptr ? lua_tostring(L, -1) : d->title;
-    lua_pop(L, 2);
+    d->title = lua_tostring(L, -4) != nullptr ? lua_tostring(L, -4) : d->script;
+    d->label = lua_tostring(L, -3) != nullptr ? lua_tostring(L, -3) : d->title;
+    d->shared = lua_toboolean(L, -2) != 0;
+    d->safe = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 4);
     return !d->marks.empty(); // it drew a map
 }
 
@@ -1875,11 +2293,52 @@ void mu_script_step(MuSession *s, char letter, Coord_t const &at) {
     (void) call(4, 0);
 }
 
-void mu_script_dungeon_gone(int id) {
+bool mu_script_bump(MuSession *s, char letter, Coord_t const &at) {
+    if (!get_mu("_bump")) {
+        return false;
+    }
+    push_player(L, s);
+    push_level(s->level);
+    lua_pushlstring(L, &letter, 1);
+    push_place(L, at);
+    if (!call(4, 1)) {
+        return true; // it was the script's, and it failed (reported)
+    }
+    bool handled = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 1);
+    return handled;
+}
+
+void mu_script_dungeon_gone(int id, bool run_gone) {
     if (get_mu("_gone")) {
         lua_pushinteger(L, id);
-        (void) call(1, 0);
+        lua_pushboolean(L, run_gone ? 1 : 0);
+        (void) call(2, 0);
     }
+}
+
+bool mu_script_dungeon_info(std::string const &key, MuSession *s, int floor, MuDungeonInfo &out) {
+    if (!get_mu("_dungeon_info")) {
+        return false;
+    }
+    lua_pushstring(L, key.c_str());
+    push_player(L, s);
+    lua_pushinteger(L, floor);
+    if (!call(3, 1)) {
+        return false;
+    }
+    bool found = lua_istable(L, -1);
+    if (found) {
+        out.name = str_field(L, -1, "name", key);
+        out.about = str_field(L, -1, "about", "");
+        out.floor_name = str_field(L, -1, "floor_name", out.name);
+        out.level_lo = int_field(L, -1, "level_lo", 0);
+        out.level_hi = int_field(L, -1, "level_hi", 0);
+        out.floors = int_field(L, -1, "floors", 1);
+        out.wait = int_field(L, -1, "wait", 0);
+    }
+    lua_pop(L, 1);
+    return found;
 }
 
 const char *muMonsterName(Monster_t const &monster) {

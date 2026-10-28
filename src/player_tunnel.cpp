@@ -11,6 +11,13 @@
 // prevent the player from getting a free attack by trying to tunnel
 // somewhere where it has no effect.
 static bool playerCanTunnel(int treasure_id, int tile_id) {
+#ifdef MUMORIA
+    if (treasure_id != 0 && game.treasure.list[treasure_id].category_id == TV_RUBBLE && game.treasure.list[treasure_id].sub_category_id == 200) {
+        game.player_free_turn = true;
+        printMessage("You can't tunnel through that."); // a script's furniture (mumoria/raid.h MU_DECOR)
+        return false;
+    }
+#endif
     if (tile_id < MIN_CAVE_WALL &&
         (treasure_id == 0 || (game.treasure.list[treasure_id].category_id != TV_RUBBLE && game.treasure.list[treasure_id].category_id != TV_SECRET_DOOR))) {
         game.player_free_turn = true;
