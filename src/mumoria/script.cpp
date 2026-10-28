@@ -1135,13 +1135,19 @@ int l_draw(lua_State *l) {
 }
 
 // mu.tile(place, tile): one square of the map drawn again (a gate opens, a
-// wall rises). False if someone stands where a wall would go.
+// wall rises). A monster where a wall would go steps aside; false if a
+// player stands there, or the monster has nowhere to go.
 int l_tile(lua_State *l) {
     need_world(l);
     Coord_t at = coord_arg(l, 1);
     std::string tile = luaL_checkstring(l, 2);
     char ch = tile.empty() ? '.' : tile[0];
     bool solid = ch == '#' || ch == ' ' || ch == '%' || ch == '=' || ch == '+' || ch == '&' || ch == '$' || ch == ':';
+    int in_way = dg.floor[at.y][at.x].creature_id;
+    Coord_t aside;
+    if (solid && in_way > 1 && !muOtherPlayerAt(at) && mu_raid_spot(at, 1, 10, aside)) {
+        move_monster(in_way, aside); // a townsperson on a building's wall
+    }
     if (solid && (dg.floor[at.y][at.x].creature_id != 0 || muOtherPlayerAt(at))) {
         lua_pushboolean(l, 0);
         return 1;

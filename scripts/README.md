@@ -234,7 +234,7 @@ for the script's own notes. Its handlers run only for that dungeon. Plain
 | `mu.here()` | in a dungeon, its floor's `d` (for commands, which are not given it); else nil |
 | `mu.enter_dungeon(player, key)` | the player in the event goes in (to their party's copy if one is open) |
 | `mu.leave_dungeon(player)` | out to where they came in from; false if not in one |
-| `mu.tile(place, tile)` | one square drawn again (a gate opens); false where someone stands in a wall's way |
+| `mu.tile(place, tile)` | one square drawn again (a gate opens); a monster in a wall's way steps aside; false where a player stands (or the monster has nowhere to go) |
 | `mu.phases(m, {{at = 66, run = fn(m)}, ...})` | in a boss's hurt handler: each phase it has fallen to runs once |
 | `mu.reward_once(player, what, hours)` | true (and noted) once every `hours` (12) per character |
 | `mu.reward_party{key=, title=, tier=, gold=, items={{key=, name=, one_in=}}}` | everyone on the level has their reward once every 12 hours |
