@@ -133,7 +133,8 @@ hours, and new players were killed within a few steps. Instead:
   as Umoria's own town would have (`fresh_townspeople`, world.cpp).
 * While the town has more than a new town, someone no player can see leaves
   each turn. While it has fewer, on Umoria's roll someone new arrives,
-  asleep and out of every player's sight.
+  asleep and out of every player's sight. A script's monsters (tagged or
+  named) neither count nor leave.
 * A player arriving in the town is placed at least 8 squares from any awake
   townsperson (`muFindSpot`).
 

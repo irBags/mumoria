@@ -1161,13 +1161,18 @@ static bool seen_by_a_player(Coord_t const &c) {
     return false;
 }
 
+// A townsperson, not one a script tagged or named: those neither count nor leave.
+static bool townsperson(Monster_t const &m) {
+    return m.mu_script == 0 && m.mu_name == 0;
+}
+
 void muTownPeople() {
     if (loaded_level == nullptr) {
         return;
     }
-    int people = 0; // townspeople: a script's monsters neither count nor leave
+    int people = 0;
     for (int i = config::monsters::MON_MIN_INDEX_ID; i < next_free_monster_id; i++) {
-        people += monsters[i].mu_script == 0;
+        people += townsperson(monsters[i]);
     }
     bool night = (dg.game_turn / 5000) & 1; // dungeon_generate.cpp isNighTime()
     int want = night ? config::monsters::MON_MIN_TOWNSFOLK_NIGHT : config::monsters::MON_MIN_TOWNSFOLK_DAY;
@@ -1176,7 +1181,7 @@ void muTownPeople() {
     }
     if (people > want) { // too many: one leaves each turn
         for (int i = next_free_monster_id - 1; i >= config::monsters::MON_MIN_INDEX_ID; i--) {
-            if (monsters[i].mu_script == 0 && !seen_by_a_player(monsters[i].pos)) {
+            if (townsperson(monsters[i]) && !seen_by_a_player(monsters[i].pos)) {
                 dungeonDeleteMonster(i);
                 return;
             }

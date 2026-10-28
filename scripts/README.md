@@ -101,7 +101,7 @@ These work inside an event or command (on the level of the player in it):
 |---|---|
 | `mu.tell(player, text)` | a line in that player's chat |
 | `mu.say_level(text)` / `mu.say_world(text)` | to the level, or to everyone |
-| `mu.spawn{creature=, name=, at= / near= / far=true, count=, hp=, speed=, awake=, boss= / tag=}` | monsters: a creature's name ("Black Orc") or a letter ("o"); `at` on that square (asleep unless `awake`), `near` around it; `name` is what the game calls them ("Imp"); `hp` multiplies, `speed` adds; `boss=` makes them a boss (a boss's loot), `tag=` only marks them; returns the monster, or a list when `count` is given |
+| `mu.spawn{creature=, name=, at= / near= / far=true, count=, hp=, speed=, awake=, boss= / tag=}` | monsters: a creature's name ("Black Orc") or a letter ("o"); `at` on that square (asleep unless `awake`), `near` around it; `name` is what the game calls them ("Imp"); `hp` multiplies, `speed` adds; `boss=` makes them a boss (a boss's loot), `tag=` only marks them; in the town, one with neither `name` nor `tag` is an ordinary townsperson, and leaves when the town has too many; returns the monster, or a list when `count` is given |
 | `mu.npc(tag, letter)` | monsters with this tag are NPCs: they never move or fight, take no harm, and walking into one is the `talk` event; `letter` (optional) is what they are drawn as |
 | `mu.letter(tag, letter)` | monsters with this tag are drawn as `letter` (one printable character) rather than their creature's |
 | `mu.monsters()` / `mu.tagged(tag)` | every monster on the level / those with that tag or boss key |
