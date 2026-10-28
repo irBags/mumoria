@@ -7,6 +7,13 @@
 
 #include "headers.h"
 
+// Does this square block the view?  Under MUMORIA a script's furniture
+// (mumoria/raid.h MU_DECOR: a table, the bar) blocks the way but not the eye.
+static bool sightBlocked(int y, int x) {
+    uint8_t feature = dg.floor[y][x].feature_id;
+    return feature >= MIN_CLOSED_SPACE MU_ONLY(&&!(feature == TILE_BLOCKED_FLOOR && muIsDecor(Coord_t{y, x})));
+}
+
 // A simple, fast, integer-based line-of-sight algorithm.  By Joseph Hall,
 // 4116 Brewster Drive, Raleigh NC 27606.  Email to jnh@ecemwl.ncsu.edu.
 //
@@ -40,7 +47,7 @@ bool los(Coord_t from, Coord_t to) {
         }
 
         for (int yy = from.y + 1; yy < to.y; yy++) {
-            if (dg.floor[yy][from.x].feature_id >= MIN_CLOSED_SPACE) {
+            if (sightBlocked(yy, from.x)) {
                 return false;
             }
         }
@@ -56,7 +63,7 @@ bool los(Coord_t from, Coord_t to) {
         }
 
         for (int xx = from.x + 1; xx < to.x; xx++) {
-            if (dg.floor[from.y][xx].feature_id >= MIN_CLOSED_SPACE) {
+            if (sightBlocked(from.y, xx)) {
                 return false;
             }
         }
@@ -109,7 +116,7 @@ bool los(Coord_t from, Coord_t to) {
             }
 
             while ((to.x - xx) != 0) {
-                if (dg.floor[yy][xx].feature_id >= MIN_CLOSED_SPACE) {
+                if (sightBlocked(yy, xx)) {
                     return false;
                 }
 
@@ -119,7 +126,7 @@ bool los(Coord_t from, Coord_t to) {
                     xx += x_sign;
                 } else if (dy > scale_half) {
                     yy += y_sign;
-                    if (dg.floor[yy][xx].feature_id >= MIN_CLOSED_SPACE) {
+                    if (sightBlocked(yy, xx)) {
                         return false;
                     }
                     xx += x_sign;
@@ -150,7 +157,7 @@ bool los(Coord_t from, Coord_t to) {
         }
 
         while ((to.y - yy) != 0) {
-            if (dg.floor[yy][xx].feature_id >= MIN_CLOSED_SPACE) {
+            if (sightBlocked(yy, xx)) {
                 return false;
             }
 
@@ -160,7 +167,7 @@ bool los(Coord_t from, Coord_t to) {
                 yy += y_sign;
             } else if (dx > scale_half) {
                 xx += x_sign;
-                if (dg.floor[yy][xx].feature_id >= MIN_CLOSED_SPACE) {
+                if (sightBlocked(yy, xx)) {
                     return false;
                 }
                 yy += y_sign;

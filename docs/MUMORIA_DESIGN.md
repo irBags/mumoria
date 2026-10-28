@@ -787,9 +787,20 @@ steps, and what stays compatible.
   It cannot be dug (`player_tunnel.cpp`); walking into it
   (`player_move.cpp` `muDecorBump`) fires the dungeon's `bump`, else tells
   its name. A wand of stone to mud still melts it, as rubble.
-* **Shared and safe:** `shared = true` makes one copy for everyone
+* **Shared, safe and lit:** `shared = true` makes one copy for everyone
   (`MuRaid::shared`); `safe = true` refuses player fights there
-  (`social.cpp`). Map tile `=` is permanent rock (`TILE_BOUNDARY_WALL`).
+  (`social.cpp`); `lit = true` (Mike, 2026-10-27: an inn is not for
+  exploring) lights and maps every open square and the walls beside them
+  for each arriving player (`world.cpp light_all`, after the per-player
+  light reset). Map tile `=` is permanent rock (`TILE_BOUNDARY_WALL`).
+* **Decor and sight:** decor sits on a blocked floor, which Umoria's `los()`
+  treats as opaque; under MUMORIA `dungeon_los.cpp sightBlocked` lets the
+  eye pass decor, so the innkeeper behind the bar is seen.
+* **Town walls:** Umoria lights every town square but open floor for good
+  (`lightTown`); `mu.tile` used to clear that, so the inn first showed as a
+  blank square with only its door. It now keeps the town's rule, and the
+  inn script draws its walls again whenever someone enters the town, which
+  mends a building drawn by the first version.
 * **The inn** (`scripts/examples/80_inn.lua`): the script builds it in the
   town's east margin (57-63 x 14-18, below the Auction House) with `mu.tile`
   when someone arrives in the town, its door a portal, an amber `0`. Inside,

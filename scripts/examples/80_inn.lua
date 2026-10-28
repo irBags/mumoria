@@ -147,16 +147,18 @@ local function spawn_npcs(d)
   one("c", "Pitiful-Looking Beggar", "Cook", "inn_cook")
 end
 
--- the building in the town: once, and again if it could not be finished
+-- the building in the town, a block of wall like the shops'; its walls are
+-- drawn again each time someone comes into the town (cheap, and it mends a
+-- building drawn by an older script), its door once
 mu.on("enter", function(p, level)
-  if level.depth ~= 0 or level.dungeon or mu.find_portal(KEY) then return end
+  if level.depth ~= 0 or level.dungeon then return end
   local whole = true
   for y = 14, 18 do
     for x = 57, 63 do
       if not (x == DOOR.x and y == DOOR.y) and not mu.tile({x = x, y = y}, "=") then whole = false end
     end
   end
-  if whole and mu.tile(DOOR, ".") then
+  if whole and not mu.find_portal(KEY) and mu.tile(DOOR, ".") then
     mu.portal{key = KEY, at = DOOR, glyph = "0", colour = 214}
   end
 end)
@@ -173,6 +175,7 @@ mu.dungeon{
   shared = true,                            -- one inn for everyone
   safe = true,                              -- nobody fights here
   hidden = true,                            -- the Warden does not list it
+  lit = true,                               -- all of it seen at once: nothing to explore
   map = MAP,
   legend = {
     U = {decor = "=", name = "the bar", colour = 130},

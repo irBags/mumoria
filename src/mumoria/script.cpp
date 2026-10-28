@@ -1146,12 +1146,19 @@ int l_tile(lua_State *l) {
         lua_pushboolean(l, 0);
         return 1;
     }
-    bool lit = dg.floor[at.y][at.x].perma_lit_room;
+    Tile_t &t = dg.floor[at.y][at.x];
+    bool lit = t.perma_lit_room, was_seen = t.permanent_light;
     draw_tile(at, ch);
     if (lit) {
-        dg.floor[at.y][at.x].perma_lit_room = true;
+        t.perma_lit_room = true;
     }
-    dg.floor[at.y][at.x].permanent_light = dg.floor[at.y][at.x].perma_lit_room;
+    if (dg.current_level == 0) {
+        // the town's rule (dungeon_generate.cpp lightTown): all but its open
+        // floor is always lit, so its buildings show by night
+        t.permanent_light = was_seen || t.feature_id != TILE_DARK_FLOOR;
+    } else {
+        t.permanent_light = t.perma_lit_room;
+    }
     dungeonLiteSpot(at);
     mu_level_loaded()->dirty = true;
     lua_pushboolean(l, 1);
@@ -1704,7 +1711,7 @@ end)
 
 -- mu.dungeon{key=, name=, label=, depth=, level=, about=, map=, legend=,
 --            floors={{name=, label=, depth=, map=, legend=, generate=, build=}},
---            shared=, safe=, hidden=,
+--            shared=, safe=, hidden=, lit=,
 --            build=, enter=, step=, bump=, talk=, hurt=, kill=, tick=}
 -- (scripts/README.md, "Dungeons"). Each floor's state table `d` is passed
 -- to the handlers: d.key, d.id, d.party, d.floor, d.places, and d.flags
@@ -1798,7 +1805,9 @@ function mu._dungeon_build(key, id, party, n, run)
     title = n == 1 and d.name or (d.name .. ", " .. floor_name(d, n))
     label = f.label or (d.label .. " " .. n)
   end
-  return title, label, d.shared == true, d.safe == true
+  local lit = f.lit
+  if lit == nil then lit = d.lit end
+  return title, label, d.shared == true, d.safe == true, lit == true
 end
 
 -- what a gate or the stairs show: nil if there is no such dungeon or floor
@@ -2271,14 +2280,15 @@ bool mu_script_dungeon_build(MuLevel *level) {
     lua_pushinteger(L, d->party);
     lua_pushinteger(L, d->floor);
     lua_pushinteger(L, d->run);
-    if (!call(5, 4)) {
+    if (!call(5, 5)) {
         return false;
     }
-    d->title = lua_tostring(L, -4) != nullptr ? lua_tostring(L, -4) : d->script;
-    d->label = lua_tostring(L, -3) != nullptr ? lua_tostring(L, -3) : d->title;
-    d->shared = lua_toboolean(L, -2) != 0;
-    d->safe = lua_toboolean(L, -1) != 0;
-    lua_pop(L, 4);
+    d->title = lua_tostring(L, -5) != nullptr ? lua_tostring(L, -5) : d->script;
+    d->label = lua_tostring(L, -4) != nullptr ? lua_tostring(L, -4) : d->title;
+    d->shared = lua_toboolean(L, -3) != 0;
+    d->safe = lua_toboolean(L, -2) != 0;
+    d->lit = lua_toboolean(L, -1) != 0;
+    lua_pop(L, 5);
     return !d->marks.empty(); // it drew a map
 }
 

@@ -206,6 +206,24 @@ static void light_lamps(MuSession *s) {
     }
 }
 
+// Everything on the loaded level that can be seen, lit and known to the
+// loaded player: every open square and the walls and doors beside them.
+static void light_all() {
+    for (int y = 0; y < dg.height; y++) {
+        for (int x = 0; x < dg.width; x++) {
+            if (dg.floor[y][x].feature_id > MAX_CAVE_FLOOR) {
+                continue;
+            }
+            for (int yy = std::max(0, y - 1); yy <= std::min(dg.height - 1, y + 1); yy++) {
+                for (int xx = std::max(0, x - 1); xx <= std::min(dg.width - 1, x + 1); xx++) {
+                    dg.floor[yy][xx].permanent_light = true;
+                    dg.floor[yy][xx].field_mark = true;
+                }
+            }
+        }
+    }
+}
+
 // Monsters are lit (drawn) as this player's screen shows them. A monster that
 // moved since is still drawn where it was: that square is drawn again, and
 // the monster is drawn where it is now by the next updateMonsters().
@@ -733,6 +751,9 @@ static void enter_level(MuSession *s, MuLevel *L) {
     s->ctx.marks_depth = depth;
     L->players.push_back(s);
     light_lamps(s);
+    if (L->raid != nullptr && L->raid->lit) {
+        light_all(); // a place to be in, not to explore
+    }
     L->empty_since = 0;
     loaded_player = s;
     if (std::find(mu_players.begin(), mu_players.end(), s) == mu_players.end()) {

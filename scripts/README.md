@@ -211,7 +211,17 @@ first floor. The handlers serve every floor: `d.floor` says which, and
 
 `shared = true` makes one copy for everyone (an inn) rather than one a
 party; `safe = true` keeps players from fighting there; `hidden = true` keeps
-it out of `mu.dungeons()`.
+it out of `mu.dungeons()`. `lit = true` (on the dungeon, or on one floor)
+makes it a place to be in rather than to explore: everything in it is lit
+and on the map the moment a player arrives. Without it, a dungeon is
+explored as any other: lit rooms light as they are entered, dark floor only
+by your own light.
+
+Decor blocks the way but not the view: monsters and players behind a table
+or the bar can be seen. Missiles still stop at it.
+
+`mu.tile` in the town follows the town's own lighting, so walls a script
+draws there (a building) show by day and by night, as the shops do.
 
 `d` is the copy's own table: `d.key`, `d.id`, `d.party` (how many it was
 made for), `d.places` (`d.places.K[1]` is the first `K`), and `d.flags`

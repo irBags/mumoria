@@ -29,6 +29,7 @@ struct MuRaid {
     int run = 0;              // the floors made for one party share it (the first floor's id)
     bool shared = false;      // one copy for everyone (an inn), not one per party
     bool safe = false;        // players do not fight here
+    bool lit = false;         // all of it lit and known on arrival: nothing to explore
     Coord_t up{0, 0}, down{0, 0}; // its stairs to the floor above (or the way out) and below
 };
 
