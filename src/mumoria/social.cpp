@@ -1317,6 +1317,7 @@ static void help(MuSession *s) {
         "  /trade name         trade with a player on your level",
         "  /pvp [on|off]       player fighting; changed once a day",
         "  /panel side|bottom|auto, border rounded|single|double|heavy|ascii|none",
+        "  PgUp PgDn           scroll the chat back and forth; Home oldest, End latest",
         "  /guild ...          create join leave invite kick promote demote",
         "                      motd rank shield turns members disband",
         "  /loot /legends /item a|worn  your finds, the latest great ones, an item",
@@ -1336,7 +1337,7 @@ static void help(MuSession *s) {
     }
     MuSafePrompt safe;
     clearScreen();
-    for (size_t i = 0; i < lines.size() && i < 22; i++) {
+    for (size_t i = 0; i < lines.size() && i < 23; i++) { // row 23 is the "any key" line
         putString(lines[i].c_str(), Coord_t{(int) i, 0});
     }
     waitForContinueKey(23);

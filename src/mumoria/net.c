@@ -162,9 +162,39 @@ static void feed(MuConn *c, const unsigned char *buf, int n) {
             c->esc_state = 0;
         } else if (c->esc_state == 2) {
             c->esc_state = 0;
+            if (ch >= '0' && ch <= '9') {
+                c->esc_state = 3; // ESC [ 5 ~ and the like: PgUp, PgDn, Home, End
+                c->esc_num = ch - '0';
+                continue;
+            }
             int a = arrow(ch);
             if (a != 0) {
                 push_key(c, (unsigned char) a);
+            } else if (ch == 'H' || ch == 'F') {
+                mu_vt_chat_scroll(&c->screen, ch == 'H' ? MU_CHAT_OLDEST : MU_CHAT_NEWEST); // Home, End
+            }
+            continue;
+        } else if (c->esc_state == 3) {
+            if (ch >= '0' && ch <= '9') {
+                c->esc_num = c->esc_num * 10 + (ch - '0');
+                continue;
+            }
+            if (ch == ';') {
+                c->esc_num = -1000; // a modifier follows: none of ours
+                continue;
+            }
+            c->esc_state = 0;
+            if (ch == '~') {
+                // the chat scrolls; the game never sees these keys
+                switch (c->esc_num) {
+                    case 5: mu_vt_chat_scroll(&c->screen, MU_CHAT_OLDER); break;
+                    case 6: mu_vt_chat_scroll(&c->screen, MU_CHAT_NEWER); break;
+                    case 1:
+                    case 7: mu_vt_chat_scroll(&c->screen, MU_CHAT_OLDEST); break;
+                    case 4:
+                    case 8: mu_vt_chat_scroll(&c->screen, MU_CHAT_NEWEST); break;
+                    default: break;
+                }
             }
             continue;
         }

@@ -210,39 +210,59 @@ static int border_of(MuScreen *s) {
 // The side panel's text width: inside the box, a space either side.
 #define SIDE_TEXT (MU_PANEL_COLS - 4)
 
-// The last `want` rows of the chat, wrapped at width (going on rows indented
-// by two), oldest first. Returns how many.
-static int chat_rows(MuScreen *s, int width, int want, char rows[MU_ROWS][MU_COLS + 1]) {
-    int count = 0, first = s->history_n > MU_CHAT_KEEP ? s->history_n - MU_CHAT_KEEP : 0;
-    for (int n = first; n < s->history_n; n++) {
-        const char *p = s->history[n % MU_CHAT_KEEP];
-        int indent = 0;
-        do {
-            int room = width - indent;
-            int len = (int) strlen(p);
-            if (len > room) {
+// Wraps one line of chat at width (going on rows indented by two): its rows
+// first .. first + want - 1 go into rows (if given) from rows[*count].
+// Returns how many rows the line makes.
+static int wrap_line(const char *p, int width, int first, int want, char rows[][MU_COLS + 1], int *count) {
+    int made = 0, indent = 0;
+    do {
+        int room = width - indent;
+        int len = (int) strlen(p);
+        if (len > room) {
+            len = room;
+            while (len > room / 2 && p[len] != ' ') {
+                len--; // break at the last space, unless it is far back
+            }
+            if (p[len] != ' ') {
                 len = room;
-                while (len > room / 2 && p[len] != ' ') {
-                    len--; // break at the last space, unless it is far back
-                }
-                if (p[len] != ' ') {
-                    len = room;
-                }
             }
-            if (count == want) {
-                memmove(rows[0], rows[1], sizeof(rows[0]) * (size_t) (want - 1));
-                count--;
-            }
-            memset(rows[count], ' ', (size_t) indent);
-            memcpy(rows[count] + indent, p, (size_t) len);
-            rows[count][indent + len] = '\0';
-            count++;
-            p += len;
-            while (*p == ' ') {
-                p++;
-            }
-            indent = 2;
-        } while (*p != '\0');
+        }
+        if (rows != NULL && made >= first && *count < want) {
+            memset(rows[*count], ' ', (size_t) indent);
+            memcpy(rows[*count] + indent, p, (size_t) len);
+            rows[*count][indent + len] = '\0';
+            (*count)++;
+        }
+        made++;
+        p += len;
+        while (*p == ' ') {
+            p++;
+        }
+        indent = 2;
+    } while (*p != '\0');
+    return made;
+}
+
+// The chat's rows, wrapped at width, oldest first: `want` of them, ending
+// chat_scroll rows above the newest. Returns how many; *older says whether
+// any are above them.
+static int chat_rows(MuScreen *s, int width, int want, char rows[MU_ROWS][MU_COLS + 1], int *older) {
+    int oldest = s->history_n > MU_CHAT_KEEP ? s->history_n - MU_CHAT_KEEP : 0, total = 0, count = 0;
+    for (int n = oldest; n < s->history_n; n++) {
+        total += wrap_line(s->history[n % MU_CHAT_KEEP], width, 0, 0, NULL, &count);
+    }
+    int most = total > want ? total - want : 0;
+    if (s->chat_scroll > most) {
+        s->chat_scroll = most;
+    }
+    int first = total - want - s->chat_scroll; // the row at the top of the view
+    if (first < 0) {
+        first = 0;
+    }
+    *older = first > 0;
+    int row = 0;
+    for (int n = oldest; n < s->history_n && count < want; n++) {
+        row += wrap_line(s->history[n % MU_CHAT_KEEP], width, first - row, want, rows, &count);
     }
     return count;
 }
@@ -266,8 +286,11 @@ static void put_chat_rows(MuScreen *s) {
         s->full_redraw = 1;
     }
     char text[MU_ROWS][MU_COLS + 1];
-    int want = side ? rows - 2 : MU_CHAT_ROWS;
-    int have = chat_rows(s, side ? SIDE_TEXT : MU_COLS, want, text);
+    int want = side ? rows - 2 : MU_CHAT_ROWS, older = 0;
+    if (!side && s->chat_scroll > 0) {
+        want--; // the last row says how to get back
+    }
+    int have = chat_rows(s, side ? SIDE_TEXT : MU_COLS, want, text, &older);
 
     for (int y = MU_GAME_ROWS; y < MU_ROWS; y++) {
         memset(s->cell[y], ' ', MU_COLS);
@@ -277,6 +300,13 @@ static void put_chat_rows(MuScreen *s) {
         // straight under Umoria's last row: a divider would cost a line
         for (int i = 0; i < have; i++) {
             memcpy(s->cell[MU_GAME_ROWS + i], text[i], strlen(text[i]));
+        }
+        if (s->chat_scroll > 0) {
+            const char *back = "-- older chat: PgUp older, PgDn newer, End the latest --";
+            memcpy(s->cell[MU_ROWS - 1], back, strlen(back));
+            for (int x = 0; x < (int) strlen(back); x++) {
+                s->attr[MU_ROWS - 1][x] = MU_ATTR_BOLD;
+            }
         }
         s->chat_dirty = 0;
         return;
@@ -297,7 +327,8 @@ static void put_chat_rows(MuScreen *s) {
     panel_put(s, 0, MU_PANEL_COLS - 1, MU_BOX_TR, edge);
     panel_put(s, rows - 1, 0, MU_BOX_BL, edge);
     panel_put(s, rows - 1, MU_PANEL_COLS - 1, MU_BOX_BR, edge);
-    const char *title = " Chat ";
+    // scrolled back, the title says so; with older lines above, how to see them
+    const char *title = s->chat_scroll > 0 ? " Chat, older: PgDn newer, End latest " : older ? " Chat (PgUp: older) " : " Chat ";
     for (int i = 0; title[i] != '\0'; i++) {
         panel_put(s, 0, 2 + i, title[i], edge | MU_ATTR_BOLD);
     }
@@ -454,8 +485,32 @@ void mu_vt_chat(MuScreen *s, const char *line) {
         }
     }
     s->history_n++;
+    if (s->chat_scroll > 0) {
+        // scrolled back: the view stays on what they are reading
+        int count = 0;
+        s->chat_scroll += wrap_line(row, s->side ? SIDE_TEXT : MU_COLS, 0, 0, NULL, &count);
+    }
     s->chat_dirty = 1;
     flush_locked(s);
+    pthread_mutex_unlock(&s->lock);
+    wake(s);
+}
+
+void mu_vt_chat_scroll(MuScreen *s, int how) {
+    pthread_mutex_lock(&s->lock);
+    int page = (s->side ? s->rows_used - 2 : MU_CHAT_ROWS) - 1;
+    page = page < 1 ? 1 : page;
+    int was = s->chat_scroll;
+    switch (how) {
+        case MU_CHAT_OLDER: s->chat_scroll += page; break; // chat_rows() keeps it in bounds
+        case MU_CHAT_NEWER: s->chat_scroll = s->chat_scroll > page ? s->chat_scroll - page : 0; break;
+        case MU_CHAT_OLDEST: s->chat_scroll = MU_CHAT_KEEP * MU_CHAT_LINE; break;
+        default: s->chat_scroll = 0; break;
+    }
+    if (s->chat_scroll != was) {
+        s->chat_dirty = 1;
+        flush_locked(s);
+    }
     pthread_mutex_unlock(&s->lock);
     wake(s);
 }

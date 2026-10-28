@@ -45,6 +45,7 @@ typedef struct MuConn {
     int sb_len;
     int last_cr;
     int esc_state;
+    int esc_num; // the number in ESC [ n ~ (PgUp is 5)
 } MuConn;
 
 int mu_net_listen(int port);

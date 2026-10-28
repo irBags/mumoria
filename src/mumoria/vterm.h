@@ -23,7 +23,7 @@ extern "C" {
 #define MU_GAME_ROWS 24
 #define MU_CHAT_ROWS 6 // the chat pane under it, on a narrower terminal
 #define MU_ROWS (MU_GAME_ROWS + MU_CHAT_ROWS)
-#define MU_CHAT_KEEP 64  // lines of chat kept, wrapped again when the layout changes
+#define MU_CHAT_KEEP 200 // lines of chat kept, wrapped again when the layout changes
 #define MU_CHAT_LINE 256
 
 // Where the chat goes (mumoria.conf chat_layout; a player's /panel).
@@ -89,6 +89,7 @@ typedef struct MuScreen {
     char history[MU_CHAT_KEEP][MU_CHAT_LINE]; // the chat's last lines, as said
     int history_n;                            // lines ever said (history is a ring)
     int chat_dirty;
+    int chat_scroll;                          // rows scrolled back from the newest (PgUp)
     char panel[MU_ROWS][MU_PANEL_COLS]; // the side panel; box pieces are MU_BOX_* codes
     uint32_t panel_attr[MU_ROWS][MU_PANEL_COLS];
     int term_cols, term_rows; // the client's terminal (telnet NAWS); 0 if not told
@@ -138,6 +139,10 @@ void mu_vt_raw(MuScreen *s, const char *bytes, int len); // telnet negotiation e
 
 // Adds a line at the bottom of the chat, scrolling it. Any thread.
 void mu_vt_chat(MuScreen *s, const char *line);
+// The player scrolls the chat (PgUp, PgDn, Home, End): older by a page,
+// newer by a page, the oldest kept, the newest. Any thread.
+enum { MU_CHAT_OLDER, MU_CHAT_NEWER, MU_CHAT_OLDEST, MU_CHAT_NEWEST };
+void mu_vt_chat_scroll(MuScreen *s, int how);
 // The client's terminal size (telnet NAWS): the layout may change.
 void mu_vt_set_size(MuScreen *s, int cols, int rows);
 // A player's choice: layout and border, -1 for the server's.

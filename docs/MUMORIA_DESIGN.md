@@ -324,8 +324,14 @@ steps, and what stays compatible.
   rows), the newest line at the bottom. Narrower (or a client that never says
   its size), rows 24-29 below Umoria's 24-line screen are the chat pane. No
   Umoria line moves either way. The width comes from telnet NAWS
-  (`net.c`); a resize moves the chat and wraps its last 64 lines again
-  (`vterm.c` keeps them as said). `mumoria.conf` `chat_layout` (auto, side,
+  (`net.c`); a resize moves the chat and wraps its last 200 lines again
+  (`vterm.c` keeps them as said). **Scrolling** (Mike, 2026-10-27: long
+  quest and dungeon text was cut off): PgUp and PgDn page the chat back and
+  forth, Home goes to the oldest line kept, End to the newest. `net.c`
+  takes these keys (`ESC [ 5 ~` and the like) for the chat; the game never
+  sees them. Scrolled back, the view stays put as new lines arrive; the
+  panel's title says how to get back (and, at the newest, that PgUp shows
+  older), the bottom pane gives up its last row to say so. `mumoria.conf` `chat_layout` (auto, side,
   bottom), `chat_border` (rounded, single, double, heavy, ascii, none) and
   `chat_border_colour` set the defaults; `/panel` changes them for a
   session. The outline is sent as UTF-8 box drawing (ascii: `+-|`). `/who`
@@ -974,7 +980,11 @@ of the following against the built server:
   map, full height, with chat and `/who` (one a line) in it; all six
   borders; `/panel bottom` and `auto`; shrinking to 80 columns moves the
   chat under the map, widening to 132x25 wraps its history into the box
-  again; a client that never sends its size keeps the pane under the map
+  again; a client that never sends its size keeps the pane under the map.
+  Scrolling (2026-10-27): 60 lines, PgUp showed older ones with the title
+  changed, three new lines left the view where it was, Home showed the
+  first, PgDn newer, End the latest; the same in the bottom pane with its
+  last row saying so; no stray key reached the game
 * the Demon Breach (`scripts/examples/40_demon_breach.lua`, sped up): the
   warning, the red portal in the town, two waves of named demons (the town
   keeps all of them), two Pit Fiends and their deaths told, Demon Lord
